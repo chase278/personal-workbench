@@ -1,0 +1,12 @@
+{
+  "name": "cos-sign-server",
+  "version": "1.0.0",
+  "description": "本地COS签名服务，签发预签名URL供工作台直传",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cos-nodejs-sdk-v5": "^2.15.4"
+  }
+}

@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>个人工作台</title>
+<style>
+  :root {
+    --bg: #f4f6fa;
+    --panel: #ffffff;
+    --border: #e4e8f0;
+    --text: #1f2733;
+    --text-2: #5b6675;
+    --text-3: #9aa3b2;
+    --primary: #3a6fe0;
+    --primary-soft: #eaf0fd;
+    --success: #1e9e6f;
+    --success-soft: #e6f6ef;
+    --danger: #d9534f;
+    --danger-soft: #fdeeec;
+    --radius: 12px;
+    --shadow: 0 2px 12px rgba(31,39,51,.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px;
+  }
+  .layout { display: flex; height: 100vh; }
+
+  /* ===== 左侧边栏 ===== */
+  .sidebar {
+    width: 300px; min-width: 300px; background: var(--panel);
+    border-right: 1px solid var(--border); padding: 24px 20px;
+    display: flex; flex-direction: column; gap: 22px; overflow-y: auto;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand .logo {
+    width: 40px; height: 40px; border-radius: 10px; background: var(--primary);
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 18px;
+  }
+  .brand h1 { font-size: 17px; font-weight: 600; }
+  .brand small { display: block; color: var(--text-3); font-size: 12px; font-weight: 400; }
+
+  .profile-card {
+    background: var(--primary-soft); border: 1px solid #d8e3fb;
+    border-radius: var(--radius); padding: 16px; position: relative;
+  }
+  .profile-avatar {
+    width: 56px; height: 56px; border-radius: 50%; background: var(--primary);
+    color: #fff; font-size: 24px; font-weight: 600; display: flex;
+    align-items: center; justify-content: center; margin-bottom: 12px;
+  }
+  .profile-name { font-size: 16px; font-weight: 600; }
+  .profile-en { color: var(--text-3); font-size: 12px; margin: 2px 0 10px; }
+  .profile-meta { display: flex; flex-direction: column; gap: 6px; }
+  .profile-meta .row { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 13px; }
+  .profile-meta .row b { color: var(--text); font-weight: 500; white-space: nowrap; }
+  .edit-btn {
+    position: absolute; top: 12px; right: 12px; border: none; background: #fff;
+    color: var(--primary); padding: 5px 10px; border-radius: 6px; cursor: pointer;
+    font-size: 12px; box-shadow: var(--shadow);
+  }
+  .edit-btn:hover { background: var(--primary); color: #fff; }
+
+  .section-title { font-size: 13px; color: var(--text-3); font-weight: 600; letter-spacing: .5px; margin-bottom: 10px; }
+  .side-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .stat-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px; text-align: center;
+  }
+  .stat-card .num { font-size: 18px; font-weight: 600; color: var(--primary); }
+  .stat-card .label { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+  /* ===== 主内容区 ===== */
+  .main { flex: 1; overflow-y: auto; padding: 24px 28px 40px; }
+  .main-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
+  .main-header h2 { font-size: 20px; font-weight: 600; }
+  .main-header .date { color: var(--text-3); font-size: 13px; }
+  .main-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 20px; }
+  @media (max-width: 1100px) { .main-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 1500px) and (min-width: 1101px) { .main-grid { grid-template-columns: 1fr 1fr; } }
+
+  /* ===== 卡片 ===== */
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow); overflow: hidden;
+  }
+  .card-tabs { display: flex; border-bottom: 1px solid var(--border); background: #fafbfd; }
+  .card-tab-btn {
+    flex: 1; padding: 12px; border: none; background: none; cursor: pointer;
+    font-size: 13px; font-weight: 500; color: var(--text-2);
+    border-bottom: 2px solid transparent;
+  }
+  .card-tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); background: #fff; }
+  .card-body { padding: 14px; }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .add-row { display: flex; gap: 8px; margin-bottom: 14px; }
+  .add-row input {
+    flex: 1; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 13px; outline: none;
+  }
+  .add-row input:focus { border-color: var(--primary); }
+  .add-btn {
+    padding: 9px 14px; background: var(--primary); color: #fff; border: none;
+    border-radius: 8px; cursor: pointer; font-size: 13px; white-space: nowrap;
+  }
+  .add-btn:hover { opacity: .9; }
+
+  .task-list { list-style: none; max-height: 260px; overflow-y: auto; }
+  .task-item {
+    display: flex; align-items: center; gap: 10px; padding: 9px 8px;
+    border-bottom: 1px solid var(--border); cursor: pointer; border-radius: 6px;
+  }
+  .task-item:hover { background: #f8f9fc; }
+  .task-checkbox {
+    width: 18px; height: 18px; min-width: 18px; border: 2px solid var(--text-3);
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    transition: all .2s;
+  }
+  .task-item.done .task-checkbox { background: var(--success); border-color: var(--success); }
+  .task-item.done .task-checkbox::after {
+    content: ""; width: 8px; height: 4px; border-left: 2px solid #fff; border-bottom: 2px solid #fff;
+    transform: rotate(-45deg) translate(1px,-1px);
+  }
+  .task-text { flex: 1; font-size: 13px; word-break: break-all; }
+  .task-item.done .task-text { text-decoration: line-through; color: var(--text-3); }
+  .task-time {
+    font-size: 11px; color: var(--text-3); background: #f1f3f7;
+    padding: 2px 7px; border-radius: 5px; white-space: nowrap; flex-shrink: 0;
+  }
+  .task-del {
+    border: none; background: none; color: var(--text-3); cursor: pointer;
+    font-size: 15px; padding: 0 4px; visibility: hidden;
+  }
+  .task-item:hover .task-del { visibility: visible; }
+  .task-del:hover { color: var(--danger); }
+  .task-empty { color: var(--text-3); font-size: 13px; text-align: center; padding: 20px 0; }
+
+  .completion-head {
+    display: flex; align-items: center; gap: 8px; margin: 4px 0 10px;
+    color: var(--success); font-size: 12px; font-weight: 600;
+  }
+  .completion-head::before { content: ""; flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+  .separator { display: flex; align-items: center; gap: 10px; margin: 16px 0; color: var(--text-3); font-size: 12px; }
+  .separator::before, .separator::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+  /* ===== 共享工作区 ===== */
+  .workspace { margin-top: 20px; }
+  .workspace-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .workspace-title h3 { font-size: 16px; font-weight: 600; }
+  .ws-add-btn {  }
+  .ws-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  @media (max-width: 1100px) { .ws-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 1500px) and (min-width: 1101px) { .ws-grid { grid-template-columns: 1fr 1fr; } }
+  .ws-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 16px; display: flex; flex-direction: column;
+  }
+  .ws-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .ws-card-title { font-size: 14px; font-weight: 600; flex: 1; }
+  .ws-rename { border: none; background: none; color: var(--text-3); cursor: pointer; font-size: 15px; padding: 2px 4px; }
+  .ws-rename:hover { color: var(--primary); }
+  .ws-del { border: none; background: none; color: var(--text-3); cursor: pointer; font-size: 15px; padding: 2px 4px; }
+  .ws-del:hover { color: var(--danger); }
+  .upload-area {
+    border: 2px dashed var(--border); border-radius: 8px; padding: 18px; text-align: center;
+    color: var(--text-3); font-size: 13px; cursor: pointer; transition: all .2s;
+  }
+  .upload-area:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+  .ws-files { list-style: none; margin-top: 12px; max-height: 200px; overflow-y: auto; }
+  .ws-file {
+    display: flex; align-items: center; gap: 8px; padding: 7px 6px; border-radius: 6px;
+    border-bottom: 1px solid var(--border); font-size: 13px;
+  }
+  .ws-file:hover { background: #f8f9fc; }
+  .check-btn {
+    width: 18px; height: 18px; min-width: 18px; border: 2px solid var(--text-3);
+    border-radius: 4px; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; background: #fff; transition: all .15s; font-size: 12px; color: #fff;
+    line-height: 1;
+  }
+  .check-btn.checked { background: var(--primary); border-color: var(--primary); cursor: pointer; }
+  .check-btn.disabled {
+    background: #eceef3; border-color: #d3d7e0; color: #c0c6d0; cursor: not-allowed; position: relative;
+  }
+  .check-btn.disabled::after {
+    content: ""; position: absolute; inset: 3px; border-radius: 2px;
+    background: repeating-linear-gradient(45deg, #d3d7e0 0 2px, transparent 2px 4px);
+  }
+  .ws-file .fname { flex: 1; word-break: break-all; }
+  .file-badge {
+    font-size: 10px; padding: 1px 6px; border-radius: 4px; white-space: nowrap; flex-shrink: 0;
+  }
+  .file-badge.local { background: var(--warning, #fff4e0); color: #8a5a12; }
+  .file-badge.remote { background: var(--success-soft); color: var(--success); }
+  .ws-toolbar { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .ws-toolbar .count { font-size: 12px; color: var(--text-3); flex: 1; }
+  .ws-sync-btn {
+    padding: 6px 12px; border: none; background: var(--primary); color: #fff;
+    border-radius: 6px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 5px;
+  }
+  .ws-sync-btn:disabled { background: #c3c9d4; cursor: not-allowed; }
+  .ws-sync-btn:hover:not(:disabled) { opacity: .9; }
+  .ws-file .fdown { border: none; background: none; color: var(--primary); cursor: pointer; font-size: 12px; }
+  .ws-file .fdel { border: none; background: none; color: var(--text-3); cursor: pointer; font-size: 13px; }
+  .ws-file .fdel:hover { color: var(--danger); }
+
+  /* ===== 模态框 ===== */
+  .modal-mask {
+    position: fixed; inset: 0; background: rgba(31,39,51,.4); z-index: 100;
+    display: none; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-mask.show { display: flex; }
+  .modal {
+    background: #fff; border-radius: 14px; width: 100%; max-width: 420px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.18); padding: 24px; max-height: 90vh; overflow-y: auto;
+  }
+  .modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 18px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 6px; font-weight: 500; }
+  .field input {
+    width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 13px; outline: none;
+  }
+  .field input:focus { border-color: var(--primary); }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+  .btn {
+    padding: 9px 16px; border-radius: 8px; font-size: 13px; cursor: pointer; border: 1px solid var(--border);
+    background: #fff; color: var(--text);
+  }
+  .btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .btn-primary:hover { opacity: .9; }
+  .btn:hover { background: #f3f5f9; }
+  .btn-primary:hover { background: var(--primary); opacity: .9; }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: #2b3440; color: #fff; padding: 10px 20px; border-radius: 8px;
+    font-size: 13px; z-index: 200; opacity: 0; transition: opacity .3s; pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+
+  .upload-drop {
+    border: 2px dashed var(--border); border-radius: 8px; padding: 18px; text-align: center;
+    color: var(--text-3); font-size: 13px; cursor: pointer; transition: all .2s; margin-bottom: 4px;
+  }
+  .upload-drop:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+  .hidden-file-input { display: none; }
+  .scrollbar::-webkit-scrollbar { width: 6px; }
+  .scrollbar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- ===== 左侧边栏 ===== -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">WB</div>
+      <div>
+        <h1>个人工作台</h1>
+        <small>Personal Workbench</small>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title">个人资料</div>
+      <div class="profile-card" id="profileCard">
+        <button class="edit-btn" onclick="openProfileModal()">✎ 编辑</button>
+        <div class="profile-avatar" id="profileAvatar">U</div>
+        <div class="profile-name" id="profileName">未设置</div>
+        <div class="profile-en" id="profileEn">—</div>
+        <div class="profile-meta">
+          <div class="row"><b>部门</b> <span id="profileDept">未填写</span></div>
+          <div class="row"><b>岗位</b> <span id="profileJob">未填写</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title">工作概览</div>
+      <div class="side-stats">
+        <div class="stat-card"><div class="num" id="statTodo">0</div><div class="label">待办</div></div>
+        <div class="stat-card"><div class="num" id="statDone">0</div><div class="label">已完成</div></div>
+        <div class="stat-card"><div class="num" id="statFiles">0</div><div class="label">共享文件</div></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ===== 主内容区 ===== -->
+  <main class="main">
+    <div class="main-header">
+      <h2>我的工作台</h2>
+      <div class="date" id="todayText"></div>
+    </div>
+
+    <!-- 备忘录 / 周计划 / 月计划 三卡片 -->
+    <div class="main-grid">
+      <!-- 备忘录 -->
+      <div class="card">
+        <div class="card-tabs">
+          <button class="card-tab-btn active" data-card="memo">备忘录</button>
+          <button class="card-tab-btn" data-card="week">本周计划</button>
+          <button class="card-tab-btn" data-card="month">本月计划</button>
+        </div>
+        <div class="card-body">
+          <!-- 备忘录 -->
+          <div class="tab-panel active" data-panel="memo">
+            <div class="add-row">
+              <input type="text" id="memoInput" placeholder="添加备忘录..." onkeydown="if(event.key==='Enter')addTask('memo')">
+              <button class="add-btn" onclick="addTask('memo')">添加</button>
+            </div>
+            <ul class="task-list scrollbar" id="memoActive"></ul>
+            <div class="separator">已完成</div>
+            <ul class="task-list scrollbar" id="memoDone"></ul>
+          </div>
+          <!-- 本周计划 -->
+          <div class="tab-panel" data-panel="week">
+            <div class="add-row">
+              <input type="text" id="weekInput" placeholder="本周计划..." onkeydown="if(event.key==='Enter')addTask('week')">
+              <button class="add-btn" onclick="addTask('week')">添加</button>
+            </div>
+            <ul class="task-list scrollbar" id="weekActive"></ul>
+            <div class="separator">已完成（周度归类）</div>
+            <ul class="task-list scrollbar" id="weekDone"></ul>
+          </div>
+          <!-- 本月计划 -->
+          <div class="tab-panel" data-panel="month">
+            <div class="add-row">
+              <input type="text" id="monthInput" placeholder="本月计划..." onkeydown="if(event.key==='Enter')addTask('month')">
+              <button class="add-btn" onclick="addTask('month')">添加</button>
+            </div>
+            <ul class="task-list scrollbar" id="monthActive"></ul>
+            <div class="separator">已完成（月度归类）</div>
+            <ul class="task-list scrollbar" id="monthDone"></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 共享工作区 -->
+    <div class="workspace">
+      <div class="workspace-title">
+        <h3>共享工作区</h3>
+        <button class="btn btn-primary" onclick="addBoard()" style="padding:8px 16px;">＋ 新增板块</button>
+      </div>
+      <div class="ws-grid" id="wsGrid"></div>
+    </div>
+  </main>
+
+  <!-- ===== 个人资料编辑模态框 ===== -->
+  <div class="modal-mask" id="profileModal" onclick="if(event.target===this)closeModal('profileModal')">
+    <div class="modal">
+      <h3>编辑个人资料</h3>
+      <div class="field"><label>姓名</label><input type="text" id="pfName" placeholder="请输入姓名"></div>
+      <div class="field"><label>英文名</label><input type="text" id="pfEn" placeholder="English Name"></div>
+      <div class="field"><label>部门</label><input type="text" id="pfDept" placeholder="所属部门"></div>
+      <div class="field"><label>岗位</label><input type="text" id="pfJob" placeholder="当前岗位"></div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal('profileModal')">取消</button>
+        <button class="btn btn-primary" onclick="saveProfile()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 板块重命名模态框 ===== -->
+  <div class="modal-mask" id="renameModal" onclick="if(event.target===this)closeModal('renameModal')">
+    <div class="modal">
+      <h3>板块重命名</h3>
+      <div class="field"><label>板块名称</label><input type="text" id="renameInput" placeholder="输入新名称"></div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal('renameModal')">取消</button>
+        <button class="btn btn-primary" onclick="saveRename()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <input type="file" class="hidden-file-input" id="fileInput" multiple>
+
+<script>
+/* ============ 数据模型 ============ */
+const DEFAULT_STATE = {
+  profile: { name: "", en: "", dept: "", job: "" },
+  tasks: {
+    memo: { active: [], done: [] },
+    week: { active: [], done: [] },
+    month: { active: [], done: [] }
+  },
+  boards: [
+    { id: "b1", name: "板块一", files: [] },
+    { id: "b2", name: "板块二", files: [] },
+    { id: "b3", name: "板块三", files: [] }
+  ]
+};
+const STORE_KEY = "workbench_state_v1";
+
+let state = loadState();
+let renameTarget = null;   // 当前正在重命名的板块 id
+let currentBoardId = null; // 当前正在上传文件的板块 id
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      // 合并默认值，防止缺字段
+      const merged = mergeState(DEFAULT_STATE, s);
+      // 安全去重：清除板块 id 重复项，防止早期版本刷新累积出的重复板块
+      const seen = new Set();
+      merged.boards = merged.boards.filter(b => (seen.has(b.id) ? false : (seen.add(b.id), true)));
+      if (!merged.boards.length) {
+        merged.boards = DEFAULT_STATE.boards.map(b => ({ id: b.id, name: b.name, files: [] }));
+      }
+      // 若实际与存储不同，回写修正一次
+      if (JSON.stringify(merged.boards) !== JSON.stringify(s.boards)) {
+        const clean = JSON.parse(JSON.stringify(merged));
+        localStorage.setItem(STORE_KEY, JSON.stringify(clean));
+      }
+      return merged;
+    }
+  } catch(e) { console.warn("load failed", e); }
+  return JSON.parse(JSON.stringify(DEFAULT_STATE));
+}
+function mergeState(base, over) {
+  const out = JSON.parse(JSON.stringify(base));
+  if (over.profile) Object.assign(out.profile, over.profile);
+  if (over.tasks) {
+    for (const k of ["memo","week","month"]) {
+      if (over.tasks[k]) {
+        out.tasks[k].active = over.tasks[k].active || [];
+        out.tasks[k].done = over.tasks[k].done || [];
+      }
+    }
+  }
+  if (Array.isArray(over.boards)) {
+    // 用户已保存板块时，以用户数据为准（完全覆盖默认），不再追加，避免重复累积
+    out.boards = over.boards
+      .filter(b => b && b.id)
+      .map(b => ({ id: b.id, name: b.name || "新板块", files: b.files || [] }));
+    // 保底：即便用户数据为空，也至少保留 3 个默认板块
+    if (out.boards.length === 0) {
+      out.boards = base.boards.map(b => ({ id: b.id, name: b.name, files: [] }));
+    }
+  }
+  return out;
+}
+function saveState() {
+  state.updatedAt = Date.now();
+  localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  localStorage.setItem("workbench_last", String(state.updatedAt));
+  // 云同步：改动后自动推送（防抖 1.5s）
+  scheduleStatePush();
+}
+
+/* ============ 工具 ============ */
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(t._timer);
+  t._timer = setTimeout(()=>t.classList.remove("show"), 2000);
+}
+function openModal(id) { document.getElementById(id).classList.add("show"); }
+function closeModal(id) { document.getElementById(id).classList.remove("show"); }
+
+/* ============ 头部日期 ============ */
+function todayText() {
+  const d = new Date();
+  const week = ["日","一","二","三","四","五","六"][d.getDay()];
+  return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 · 星期${week}`;
+}
+/* 格式化完成时间（精确到分钟，含年月日时分） */
+function formatCompletedAt(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/* ============ 卡片 Tab 切换 ============ */
+function initTabs() {
+  document.querySelectorAll(".card-tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const card = btn.dataset.card;
+      // 切换同一卡片内的 Tab 按钮
+      btn.parentElement.querySelectorAll(".card-tab-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      // 切换对应面板
+      document.querySelectorAll('[data-panel]').forEach(p => {
+        p.classList.remove("active");
+        if (p.dataset.panel === card) p.classList.add("active");
+      });
+    });
+  });
+}
+
+/* ============ 任务逻辑 ============ */
+function addTask(type) {
+  const inputMap = { memo: "memoInput", week: "weekInput", month: "monthInput" };
+  const el = document.getElementById(inputMap[type]);
+  const text = el.value.trim();
+  if (!text) return;
+  state.tasks[type].active.push({ id: uid(), text, done: false });
+  el.value = "";
+  saveState();
+  render();
+}
+function toggleTask(type, id) {
+  const task = state.tasks[type].active.find(t => t.id === id);
+  if (task) {
+    task.done = true;
+    // 记录完成时间（读取电脑当前时间，精确到分钟）
+    task.completedAt = Date.now();
+    // 移动到已完成区
+    const idx = state.tasks[type].active.indexOf(task);
+    state.tasks[type].active.splice(idx, 1);
+    state.tasks[type].done.unshift({ id: task.id, text: task.text, completedAt: task.completedAt });
+  }
+  saveState();
+  render();
+}
+function deleteTask(type, id, isDone) {
+  const list = isDone ? "done" : "active";
+  state.tasks[type][list] = state.tasks[type][list].filter(t => t.id !== id);
+  saveState();
+  render();
+}
+function renderTasks(type) {
+  const suffix = type === "memo" ? "" : "";
+  const activeEl = document.getElementById(type + "Active");
+  const doneEl = document.getElementById(type + "Done");
+  const active = state.tasks[type].active;
+  const done = state.tasks[type].done;
+
+  if (active.length === 0) {
+    activeEl.innerHTML = '<li class="task-empty">暂无内容，输入后添加到上方</li>';
+  } else {
+    activeEl.innerHTML = active.map(t => `
+      <li class="task-item" onclick="toggleTask('${type}','${t.id}')">
+        <span class="task-checkbox"></span>
+        <span class="task-text">${escapeHtml(t.text)}</span>
+        <button class="task-del" onclick="event.stopPropagation();deleteTask('${type}','${t.id}',false)">✕</button>
+      </li>`).join("");
+  }
+
+  if (done.length === 0) {
+    doneEl.innerHTML = '<li class="task-empty">暂无已完成</li>';
+  } else {
+    doneEl.innerHTML = done.map(t => `
+      <li class="task-item done">
+        <span class="task-checkbox"></span>
+        <span class="task-text">${escapeHtml(t.text)}</span>
+        <span class="task-time" title="完成时间">${formatCompletedAt(t.completedAt)}</span>
+        <button class="task-del" onclick="deleteTask('${type}','${t.id}',true)">✕</button>
+      </li>`).join("");
+  }
+}
+
+/* ============ 共享工作区 ============ */
+function addBoard() {
+  state.boards.push({ id: uid(), name: "新板块", files: [] });
+  saveState();
+  render();
+}
+function renameBoard(id) {
+  renameTarget = id;
+  const b = state.boards.find(b => b.id === id);
+  document.getElementById("renameInput").value = b ? b.name : "";
+  openModal("renameModal");
+}
+function saveRename() {
+  const name = document.getElementById("renameInput").value.trim();
+  if (!name) { toast("名称不能为空"); return; }
+  const b = state.boards.find(b => b.id === renameTarget);
+  if (b) { b.name = name; saveState(); render(); }
+  renameTarget = null;
+  closeModal("renameModal");
+  toast("板块已重命名");
+}
+function deleteBoard(id) {
+  const b = state.boards.find(b => b.id === id);
+  if (!confirm(`确定删除板块「${b ? b.name : ""}」？该板块下文件将一并删除。`)) return;
+  if (state.boards.length <= 1) { toast("至少保留一个板块"); return; }
+  state.boards = state.boards.filter(b => b.id !== id);
+  saveState();
+  render();
+}
+/* 文件上传 —— 预留后端接口，现阶段本地存储 */
+function openFilePicker(boardId) {
+  currentBoardId = boardId;
+  document.getElementById("fileInput").click();
+}
+document.getElementById("fileInput").addEventListener("change", function(e) {
+  const files = Array.from(e.target.files || []);
+  const board = state.boards.find(b => b.id === currentBoardId);
+  if (board && files.length) {
+    files.forEach(f => {
+      const id = uid();
+      // 把 File 二进制存到内存 Map（localStorage 只存 meta，真正上传时从这取 Blob）
+      fileBlobById.set(id, f);
+      board.files.push({
+        id,
+        name: f.name,
+        size: f.size,
+        serverUploaded: false,   // false=本地未上传(可选)，true=已上传服务器(不可选)
+        objectKey: null,          // 上传成功后记录 COS 中的 key
+        local: URL.createObjectURL(f)
+      });
+    });
+    saveState();
+    render();
+    toast(`已添加 ${files.length} 个文件（本地待上传，勾选后批量同步到服务器）`);
+  }
+  e.target.value = "";
+  currentBoardId = null;
+});
+async function downloadFile(boardId, fileId) {
+  const board = state.boards.find(b => b.id === boardId);
+  const f = board && board.files.find(x => x.id === fileId);
+  if (!f) return;
+
+  // 已上传到 COS 的文件：请求签名服务拿可下载 URL（私有桶需要临时签名）
+  if (f.serverUploaded && f.objectKey) {
+    try {
+      const r = await fetch(`${SIGN_SERVER}/api/sign-download?key=${encodeURIComponent(f.objectKey)}`);
+      if (!r.ok) throw new Error("签名下载失败 " + r.status);
+      const j = await r.json();
+      const a = document.createElement("a");
+      a.href = j.downloadUrl;
+      a.download = f.name;
+      a.target = "_blank";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (e) {
+      toast("下载失败: " + (e.message || e) + "（请确认签名服务已启动）");
+    }
+    return;
+  }
+
+  // 本地未上传文件：用本地 objectURL
+  const url = f.local;
+  if (!url) { toast("该文件暂无下载地址"); return; }
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = f.name;
+  a.target = "_blank";
+  a.click();
+}
+async function deleteFile(boardId, fileId) {
+  const board = state.boards.find(b => b.id === boardId);
+  if (!board) return;
+  const fileItem = board.files.find(x => x.id === fileId);
+  if (!fileItem) return;
+
+  // 若该文件已上传到 COS（有 objectKey），先调用签名服务删除云端对象
+  if (fileItem.serverUploaded && fileItem.objectKey) {
+    try {
+      const r = await fetch(`${SIGN_SERVER}/api/delete?key=${encodeURIComponent(fileItem.objectKey)}`);
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.error || ("HTTP " + r.status));
+      }
+    } catch (e) {
+      // 云端删除失败时提示但不阻塞（避免用户以为删了结果云端还在）
+      if (!confirm("云端文件删除失败(" + (e.message || e) + ")。仍要从本地列表移除吗？")) return;
+    }
+  }
+
+  // 本地移除
+  board.files = board.files.filter(x => x.id !== fileId);
+  if (selectedMap[boardId]) selectedMap[boardId].delete(fileId);
+  saveState();
+  render();
+  if (fileItem.serverUploaded && fileItem.objectKey) toast("已从本地列表和云端删除");
+}
+/* ===== 服务器同步：选择 & 批量上传 ===== */
+/* 记录每个板块被勾选的文件 id（用于批量上传） */
+const selectedMap = {}; // { boardId: Set(fileId) }
+
+/* 内存 Map：保存选中文件的 File/Blob 二进制（localStorage 只存 meta） */
+const fileBlobById = new Map(); // { fileId: File }
+
+/* COS 本地签名服务地址（阶段2本地跑）——部署云端后改成云函数域名 */
+const SIGN_SERVER = "http://localhost:3456";
+
+/* ===== 工作台状态云端同步（磁带备忘录/计划/资料/板块跨设备一致） ===== */
+const STATE_FETCH_KEY = "workbench_synced_v1";   // 记录上次同步时间，决定本地是否比云端新
+let _pushTimer = null;
+let _syncing = false;
+
+/* 防抖推送：改动后 1.5s 把 state 推到云端 */
+function scheduleStatePush() {
+  clearTimeout(_pushTimer);
+  _pushTimer = setTimeout(() => { pushStateToCloud(); }, 1500);
+}
+
+/* 上传当前 state 到云端 /api/state（POST） */
+async function pushStateToCloud() {
+  if (_syncing) return;          // 避免并发
+  _syncing = true;
+  try {
+    const r = await fetch(SIGN_SERVER + "/api/state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(state)
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    localStorage.setItem("workbench_lastpush", String(state.updatedAt || Date.now()));
+  } catch (e) {
+    console.warn("云端推送失败(稍后自动重试):", e.message);
+  } finally { _syncing = false; }
+}
+
+/* 启动时从云端拉取 state，若云端比本地新则覆盖 */
+async function syncFromCloud() {
+  try {
+    const r = await fetch(SIGN_SERVER + "/api/state");
+    if (!r.ok) { console.warn("云端读取失败 HTTP", r.status); return; }
+    const j = await r.json();
+    if (!j.state) { console.log("云端无状态，首次则上传本地"); pushStateToCloud(); return; }
+    const cloudTs = j.state.updatedAt || 0;
+    const localTs = (localStorage.getItem("workbench_last") ? Number(localStorage.getItem("workbench_last")) : 0) || (state.updatedAt || 0);
+    // 仅当云端比本地新时覆盖（last-write-wins 简单策略）
+    if (cloudTs > localTs) {
+      state = mergeState(DEFAULT_STATE, j.state);
+      // 板块去重（保险）
+      const seen = new Set();
+      state.boards = state.boards.filter(b => (seen.has(b.id) ? false : (seen.add(b.id), true)));
+      localStorage.setItem(STORE_KEY, JSON.stringify(state));
+      console.log("已从云端同步状态(云端更新)");
+      render();
+      toast("已同步云端最新数据");
+    } else {
+      console.log("本地较新(或一致),以本地为准");
+    }
+  } catch (e) {
+    console.warn("云同步读取失败(签名服务未启动?):", e.message);
+  }
+}
+
+/* 点击选择按钮：只允许未上传的文件被勾选（已上传的为灰色禁用） */
+function toggleSelect(boardId, fileId) {
+  const board = state.boards.find(b => b.id === boardId);
+  const f = board && board.files.find(x => x.id === fileId);
+  if (!f || f.serverUploaded) return;   // 已上传则灰色不可选
+  if (!selectedMap[boardId]) selectedMap[boardId] = new Set();
+  const set = selectedMap[boardId];
+  set.has(fileId) ? set.delete(fileId) : set.add(fileId);
+  // 更新按钮视觉状态（不整体重渲染，仅切换勾选框样式）
+  const btn = document.querySelector(`.check-btn[data-bid="${boardId}"][data-fid="${fileId}"]`);
+  if (btn) btn.classList.toggle("checked", set.has(fileId));
+  updateToolbarState(boardId);
+}
+
+/* 根据勾选情况更新「上传到服务器」按钮可用性 */
+function updateToolbarState(boardId) {
+  const btn = document.querySelector(`.ws-sync-btn[data-bid="${boardId}"]`);
+  const n = (selectedMap[boardId] || new Set()).size;
+  if (btn) {
+    btn.disabled = n === 0;
+    btn.textContent = n > 0 ? `⇪ 上传所选 (${n})` : "⇪ 上传到服务器";
+  }
+}
+
+/* 批量上传：遍历该板块被勾选的本地文件，逐个调用后端上传接口 */
+function uploadSelected(boardId) {
+  const board = state.boards.find(b => b.id === boardId);
+  if (!board) return;
+  const ids = Array.from((selectedMap[boardId] || new Set()).values());
+  const toUpload = board.files.filter(f => ids.includes(f.id) && !f.serverUploaded);
+  if (toUpload.length === 0) { toast("请先选择待上传的本地文件"); return; }
+
+  // 禁用按钮避免重复点击
+  const btn = document.querySelector(`.ws-sync-btn[data-bid="${boardId}"]`);
+  if (btn) btn.disabled = true;
+  toast(`正在上传 ${toUpload.length} 个文件到服务器...`);
+
+  let done = 0;
+  toUpload.forEach(f => {
+    // 传入板块 id 作为 COS 目录名，协助签名服务拼 objectKey
+    f._folder = board.id;
+    // 调用签名服务 + 直传 COS
+    uploadFileToServer(f).then(res => {
+      const serverUrl = res && res.uploadUrl ? res.uploadUrl.split("?")[0] : null;
+      f.serverUploaded = true;      // 标记已同步，选择按钮将变灰
+      f.serverUrl = serverUrl;      // 记录服务器地址
+      f.objectKey = res && res.objectKey;   // 记录 COS key，用于私有下载
+      if (selectedMap[boardId]) selectedMap[boardId].delete(f.id); // 清掉勾选
+      done++;
+      // 每完成一个刷新一次按钮计数
+      updateToolbarState(boardId);
+      if (done === toUpload.length) {
+        saveState();
+        render();
+        toast(`✓ ${toUpload.length} 个文件已上传到服务器`);
+      }
+    }).catch(err => {
+      done++;
+      console.error("上传失败:", err);
+      toast("上传失败: " + (err.message || err));
+      if (done === toUpload.length) { saveState(); render(); }
+    });
+  });
+}
+
+/*
+ * 后端上传（第二阶段：真实 COS 直传）。
+ * 两步走：
+ *   1) 调本地签名服务 /api/sign-upload 拿「预签名 PUT URL」（密钥不暴露给前端）
+ *   2) 用 fetch 以 PUT 方式把这个文件的 Blob 传上去
+ * 返回 { uploadUrl, objectKey }，成功则 resolved。
+ */
+async function uploadFileToServer(fileMeta) {
+  const blob = fileBlobById.get(fileMeta.id);
+  if (!blob) {
+    throw new Error("文件二进制已丢失（可能刷新后未重新选择），请重新添加文件");
+  }
+
+  // 组织参数：folder 用板块id，filename 用文件名
+  // 说明：uploadSelected 会传 folder 参数
+  const params = new URLSearchParams({
+    filename: fileMeta.name,
+    folder: fileMeta._folder || "default"
+  });
+
+  // 1) 向本地签名服务请求预签名 URL
+  let signRes;
+  try {
+    signRes = await fetch(`${SIGN_SERVER}/api/sign-upload?${params.toString()}`);
+  } catch (e) {
+    throw new Error("无法连接本地签名服务，请先启动: node server.js（" + SIGN_SERVER + ")");
+  }
+  if (!signRes.ok) {
+    let msg = "签名失败 " + signRes.status;
+    try { const j = await signRes.json(); if (j.error) msg += ": " + j.error; } catch(_) {}
+    throw new Error(msg);
+  }
+  const sign = await signRes.json();
+  if (!sign.uploadUrl) throw new Error("签名服务未返回上传地址");
+
+  // 2) 用预签名 URL 直接 PUT 上传文件二进制
+  const upRes = await fetch(sign.uploadUrl, {
+    method: "PUT",
+    body: blob
+  });
+  if (!upRes.ok) {
+    throw new Error("上传到 COS 失败（HTTP " + upRes.status + "）");
+  }
+
+  // 返回服务器地址与 COS key
+  return {
+    uploadUrl: sign.uploadUrl,
+    objectKey: sign.objectKey,
+    displayUrl: sign.uploadUrl.split("?")[0]
+  };
+}
+function formatSize(bytes) {
+  if (!bytes && bytes !== 0) return "";
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + " KB";
+  return (bytes/(1024*1024)).toFixed(1) + " MB";
+}
+function renderBoards() {
+  const grid = document.getElementById("wsGrid");
+  grid.innerHTML = state.boards.map(b => {
+    const localCount = b.files.filter(f => !f.serverUploaded).length;
+    const remoteCount = b.files.length - localCount;
+    return `
+    <div class="ws-card">
+      <div class="ws-card-header">
+        <span class="ws-card-title">${escapeHtml(b.name)}</span>
+        <button class="ws-rename" title="重命名" onclick="renameBoard('${b.id}')">✎</button>
+        <button class="ws-del" title="删除板块" onclick="deleteBoard('${b.id}')">✕</button>
+      </div>
+      <div class="upload-drop" onclick="openFilePicker('${b.id}')">＋ 点击选择文件到该板块</div>
+      <ul class="ws-files scrollbar">
+        ${b.files.length === 0 ? '<li class="task-empty">暂无文件</li>' : b.files.map(f => `
+          <li class="ws-file">
+            <span class="check-btn ${f.serverUploaded ? 'disabled' : ''}" data-bid="${b.id}" data-fid="${f.id}"
+              title="${f.serverUploaded ? '已上传服务器，无需再传' : '选择文件以批量上传'}"
+              onclick="toggleSelect('${b.id}','${f.id}')">✓</span>
+            <span class="fname">${escapeHtml(f.name)} ${f.size ? `<small style="color:var(--text-3)">(${formatSize(f.size)})</small>` : ""}</span>
+            <span class="file-badge ${f.serverUploaded ? 'remote' : 'local'}">${f.serverUploaded ? '已同步' : '待上传'}</span>
+            <button class="fdown" onclick="downloadFile('${b.id}','${f.id}')">下载</button>
+            <button class="fdel" onclick="deleteFile('${b.id}','${f.id}')">✕</button>
+          </li>`).join("")}
+      </ul>
+      <div class="ws-toolbar">
+        <span class="count">${localCount ? localCount + ' 个待上传 · ' : ''}${remoteCount} 个已同步</span>
+        <button class="ws-sync-btn" data-bid="${b.id}" onclick="uploadSelected('${b.id}')"
+          ${localCount ? '' : 'disabled'} title="${localCount ? '将勾选的本地文件上传到服务器' : '没有待上传的本地文件'}">
+          ⇪ 上传到服务器
+        </button>
+      </div>
+    </div>`;
+  }).join("");
+  // 重绘后同步每个板块的勾选状态（若之前已勾选且文件仍存在）
+  Object.keys(selectedMap).forEach(bid => {
+    (selectedMap[bid] || new Set()).forEach(fid => {
+      const btn = grid.querySelector(`.check-btn[data-bid="${bid}"][data-fid="${fid}"]`);
+      if (btn && !btn.classList.contains("disabled")) btn.classList.add("checked");
+    });
+    updateToolbarState(bid);
+  });
+}
+
+/* ============ 个人资料 ============ */
+function openProfileModal() {
+  const p = state.profile;
+  document.getElementById("pfName").value = p.name || "";
+  document.getElementById("pfEn").value = p.en || "";
+  document.getElementById("pfDept").value = p.dept || "";
+  document.getElementById("pfJob").value = p.job || "";
+  openModal("profileModal");
+}
+function saveProfile() {
+  state.profile = {
+    name: document.getElementById("pfName").value.trim(),
+    en: document.getElementById("pfEn").value.trim(),
+    dept: document.getElementById("pfDept").value.trim(),
+    job: document.getElementById("pfJob").value.trim()
+  };
+  saveState();
+  render();
+  closeModal("profileModal");
+  toast("个人资料已保存");
+}
+
+/* ============ 整体渲染 ============ */
+function renderStats() {
+  let todo = 0, done = 0, files = 0;
+  ["memo","week","month"].forEach(k => {
+    todo += state.tasks[k].active.length;
+    done += state.tasks[k].done.length;
+  });
+  state.boards.forEach(b => files += b.files.length);
+  document.getElementById("statTodo").textContent = todo;
+  document.getElementById("statDone").textContent = done;
+  document.getElementById("statFiles").textContent = files;
+}
+function renderProfile() {
+  const p = state.profile;
+  document.getElementById("profileName").textContent = p.name || "未设置";
+  document.getElementById("profileEn").textContent = p.en || (p.name ? "" : "—");
+  const avatarChar = (p.name || "U").charAt(0).toUpperCase();
+  document.getElementById("profileAvatar").textContent = escapeHtml(avatarChar);
+  document.getElementById("profileDept").textContent = p.dept || "未填写";
+  document.getElementById("profileJob").textContent = p.job || "未填写";
+}
+function render() {
+  renderProfile();
+  renderTasks("memo");
+  renderTasks("week");
+  renderTasks("month");
+  renderBoards();
+  renderStats();
+}
+
+/* ============ 初始化 ============ */
+function init() {
+  document.getElementById("todayText").textContent = todayText();
+  initTabs();
+  render();
+  // 启动时从云端拉取状态（若云端更新则覆盖）——分钟内手工可用
+  syncFromCloud();
+}
+document.addEventListener("DOMContentLoaded", init);
+</script>
+</body>
+</html>
