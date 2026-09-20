@@ -11,29 +11,39 @@ const http = require('http');
 const url = require('url');
 const path = require('path');
 
-/* ================= 配置区（你自己填写/或用环境变量） ================= */
-// 方式1：直接填在下面（仅本地开发用，不要把本文件提交到公网仓库）
-const SECRET_ID = process.env.COS_SECRET_ID || 'YOUR_SECRET_ID_HERE';    // TODO: set COS_SECRET_ID env var or replace placeholder
-const SECRET_KEY = process.env.COS_SECRET_KEY || 'YOUR_SECRET_KEY_HERE'; // TODO: set COS_SECRET_KEY env var or replace placeholder
-const BUCKET = process.env.COS_BUCKET || 'your-bucket-name';             // TODO: set COS_BUCKET env var or replace placeholder
-const REGION = process.env.COS_REGION || 'ap-guangzhou';                 // TODO: set COS_REGION env var or replace placeholder
-const BASE_PATH = process.env.COS_BASE_PATH || 'workbench';           // 上传到什么目录
-const PORT = Number(process.env.PORT || 3456);                        // 签名服务端口
-/* ==================================================================== */
+/* ================= 配置区（全部从环境变量读取） =================
+ * 密钥不再写死在代码里，统一放在同目录的 .env 文件中（该文件不进 git）。
+ *
+ * 启动方式（二选一）：
+ *   1) 推荐：双击「启动工作台.command」，它会用 node --env-file=.env 自动注入
+ *   2) 手动：cd cos-server && node --env-file=.env server.js
+ *
+ * 新增配置项时，同步补到 .env（真实值）和 .env.example（模板）里。
+ * ================================================================= */
+const SECRET_ID = process.env.COS_SECRET_ID || '你的SecretId';   // 未配置时回退到占位符 → 开发模式
+const SECRET_KEY = process.env.COS_SECRET_KEY || '你的SecretKey';
+const BUCKET = process.env.COS_BUCKET || '你的Bucket';           // 例：my-bucket-1250000000
+const REGION = process.env.COS_REGION || 'ap-guangzhou';         // 地域
+const BASE_PATH = process.env.COS_BASE_PATH || 'workbench';      // 上传到什么目录
+const PORT = Number(process.env.PORT || 3456);                   // 签名服务端口
+/* ================================================================ */
 
-if (SECRET_ID.indexOf('YOUR_SECRET_ID_HERE') >= 0 || SECRET_KEY.indexOf('YOUR_SECRET_KEY_HERE') >= 0) {
-  // 开发模式：未填密钥时可跑通路由框架，但返回 mock 结果（方便先调试前端）
-  console.warn('[开发模式] 未配置真实密钥，签名接口将返回 mock 地址（不真正上传到COS）。');
-  console.warn('  要真正上传，请在控制台拿 SecretId/SecretKey 后填到顶部或设环境变量。');
-  const mockCos = {
-    getPresignedUrl: (opts, cb) => cb(null, { Url: `http://127.0.0.1:${PORT}/${opts.Key}?mock=1` })
+const IS_MOCK = SECRET_ID.indexOf('你的') >= 0 || SECRET_KEY.indexOf('你的') >= 0 || BUCKET.indexOf('你的') >= 0;
+
+let cos;
+if (IS_MOCK) {
+  // 开发模式：未配置密钥时可跑通路由框架，但返回 mock 结果（方便先调试前端）
+  console.warn('[开发模式] 未检测到 COS 密钥，签名接口将返回 mock 地址（不真正上传到COS）。');
+  console.warn('  请在 cos-server/.env 中填写 COS_SECRET_ID / COS_SECRET_KEY / COS_BUCKET 后重启。');
+  cos = {
+    getObjectUrl: (opts, cb) => cb(null, { Url: `http://127.0.0.1:${PORT}/${opts.Key}?mock=1` }),
+    getObject: (opts, cb) => cb({ statusCode: 404, code: 'NoSuchKey' }),
+    putObject: (opts, cb) => cb(null, {}),
+    deleteObject: (opts, cb) => cb(null, {})
   };
-  var cos = mockCos;
-  var IS_MOCK = true;
 } else {
   const COS = require('cos-nodejs-sdk-v5');
-  var cos = new COS({ SecretId: SECRET_ID, SecretKey: SECRET_KEY });
-  var IS_MOCK = false;
+  cos = new COS({ SecretId: SECRET_ID, SecretKey: SECRET_KEY });
   console.log('✔ 已配置真实密钥，签名接口将真正对接 COS 桶 ' + BUCKET);
 }
 
