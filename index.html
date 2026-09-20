@@ -150,6 +150,52 @@
   .separator { display: flex; align-items: center; gap: 10px; margin: 16px 0; color: var(--text-3); font-size: 12px; }
   .separator::before, .separator::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 
+  /* ===== 周度历史归档 ===== */
+  .history-archive { margin: 14px 0 4px; }
+  .history-archive > summary {
+    cursor: pointer; font-size: 12px; color: var(--text-3); padding: 8px 10px; user-select: none;
+    list-style: none; display: flex; align-items: center; gap: 7px;
+    border: 1px solid var(--border); border-radius: 8px; background: #fafbfd;
+    transition: all .18s;
+  }
+  .history-archive > summary::-webkit-details-marker { display: none; }
+  .history-archive > summary::before {
+    content: ""; flex: 0 0 auto; width: 0; height: 0;
+    border-left: 5px solid currentColor; border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+    transition: transform .18s;
+  }
+  .history-archive[open] > summary::before { transform: rotate(90deg); }
+  .history-archive > summary:hover { color: var(--primary); border-color: var(--primary); background: var(--primary-soft); }
+  .history-archive[open] > summary { margin-bottom: 6px; }
+
+  /* 单组（周/月）折叠头 —— 与"周"标签同排的下拉按钮 */
+  .history-group { margin: 6px 0; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+  .history-group[open] { background: #fcfdff; }
+  .history-head {
+    display: flex; align-items: center; gap: 8px; padding: 9px 11px;
+    cursor: pointer; user-select: none; list-style: none;
+    transition: background .18s;
+  }
+  .history-head::-webkit-details-marker { display: none; }
+  .history-head:hover { background: #f5f7fc; }
+  .history-group[open] > .history-head { background: #f7f9fd; border-bottom: 1px solid var(--border); }
+  /* 下拉三角 */
+  .history-caret {
+    flex: 0 0 auto; width: 0; height: 0; color: var(--text-3);
+    border-left: 5px solid currentColor; border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+    transition: transform .2s;
+  }
+  .history-group[open] .history-caret { transform: rotate(90deg); color: var(--primary); }
+  .history-label { font-size: 12px; font-weight: 600; color: var(--text-2); }
+  .history-group[open] .history-label { color: var(--primary); }
+  .history-count {
+    font-size: 11px; color: var(--text-3); background: #f1f3f7;
+    padding: 1px 7px; border-radius: 10px; white-space: nowrap;
+  }
+  .history-hint { margin-left: auto; font-size: 11px; color: var(--text-3); }
+  .history-group .task-list { max-height: 320px; padding: 6px 8px 4px; }
+  .history-group .task-item:last-child { border-bottom: none; }
+
   /* ===== 共享工作区 ===== */
   .workspace { margin-top: 20px; }
   .workspace-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
@@ -327,8 +373,12 @@
               <button class="add-btn" onclick="addTask('week')">添加</button>
             </div>
             <ul class="task-list scrollbar" id="weekActive"></ul>
-            <div class="separator">已完成（周度归类）</div>
+            <div class="separator">本周已完成（每周一自动归档上一周）</div>
             <ul class="task-list scrollbar" id="weekDone"></ul>
+            <details class="history-archive" id="weekHistoryWrap">
+              <summary>历史归档（按周折叠）</summary>
+              <div id="weekHistory"></div>
+            </details>
           </div>
           <!-- 本月计划 -->
           <div class="tab-panel" data-panel="month">
@@ -337,8 +387,12 @@
               <button class="add-btn" onclick="addTask('month')">添加</button>
             </div>
             <ul class="task-list scrollbar" id="monthActive"></ul>
-            <div class="separator">已完成（月度归类）</div>
+            <div class="separator">本月已完成（每月1日自动归档上月）</div>
             <ul class="task-list scrollbar" id="monthDone"></ul>
+            <details class="history-archive" id="monthHistoryWrap">
+              <summary>历史归档（按月折叠）</summary>
+              <div id="monthHistory"></div>
+            </details>
           </div>
         </div>
       </div>
@@ -390,8 +444,8 @@ const DEFAULT_STATE = {
   profile: { name: "", en: "", dept: "", job: "" },
   tasks: {
     memo: { active: [], done: [] },
-    week: { active: [], done: [] },
-    month: { active: [], done: [] }
+    week: { active: [], done: [], history: [] },
+    month: { active: [], done: [], history: [] }
   },
   boards: [
     { id: "b1", name: "板块一", files: [] },
@@ -404,6 +458,9 @@ const STORE_KEY = "workbench_state_v1";
 let state = loadState();
 let renameTarget = null;   // 当前正在重命名的板块 id
 let currentBoardId = null; // 当前正在上传文件的板块 id
+// 历史归档中哪些周/月处于"展开"状态（仅页面级 UI 状态，不写入 state、不参与云同步）
+const expandedWeek = new Set();
+const expandedMonth = new Set();
 
 function loadState() {
   try {
@@ -436,6 +493,8 @@ function mergeState(base, over) {
       if (over.tasks[k]) {
         out.tasks[k].active = over.tasks[k].active || [];
         out.tasks[k].done = over.tasks[k].done || [];
+        // 周历史归档（旧数据无此字段时保留默认空数组即可）
+        if (over.tasks[k].history) out.tasks[k].history = over.tasks[k].history;
       }
     }
   }
@@ -486,6 +545,193 @@ function formatCompletedAt(ts) {
   const d = new Date(ts);
   const pad = n => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/* ============ 周度自动归档（每周一自动分割上一周） ============ */
+/* 本周一 00:00 的时间戳（周一为一周起点；周日视为上周周日） */
+function getThisMondayStart() {
+  const now = new Date();
+  const day = now.getDay();                // 0=周日
+  const diff = day === 0 ? 6 : day - 1;    // 距本周一的天数
+  const m = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diff);
+  m.setHours(0, 0, 0, 0);
+  return m.getTime();
+}
+/* 返回某时间点所在周的标签 "2026-W37" 与所属周一零点 */
+function weekInfo(ts) {
+  const d = new Date(ts);
+  const day = d.getDay() === 0 ? 7 : d.getDay();       // 周日当 7
+  const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - (day - 1));
+  monday.setHours(0, 0, 0, 0);
+  // ISO 周数：以周一所在周的周四锚定算
+  const thu = new Date(monday);
+  thu.setDate(monday.getDate() + 3);
+  const yearStart = new Date(thu.getFullYear(), 0, 1);
+  const weekNo = Math.ceil((((thu - yearStart) / 86400000) + 1) / 7);
+  return { label: `${monday.getFullYear()}-W${String(weekNo).padStart(2,"0")}`, start: monday.getTime() };
+}
+/* 核心：把本周一之前完成的项，从 done 按周归档进 history（幂等） */
+function archiveOlderTasks() {
+  const wk = state.tasks.week;
+  if (!wk.history) wk.history = [];
+  const mondayStart = getThisMondayStart();
+  const older = wk.done.filter(t => !t.completedAt || t.completedAt < mondayStart);
+  if (older.length === 0) return false;
+  // 按周分组
+  const groups = {};
+  older.forEach(t => {
+    const info = weekInfo(t.completedAt || Date.now());
+    if (!groups[info.label]) groups[info.label] = { label: info.label, start: info.start, items: [] };
+    groups[info.label].items.push(t);
+  });
+  Object.values(groups).forEach(g => {
+    g.items.sort((a, b) => b.completedAt - a.completedAt);
+    const exist = wk.history.find(h => h.label === g.label);
+    if (exist) {
+      const seen = new Set(exist.items.map(i => i.id));
+      exist.items = g.items.filter(i => !seen.has(i.id)).concat(exist.items);
+    } else {
+      wk.history.push(g);
+    }
+  });
+  // 归档区按周从新到旧排
+  wk.history.sort((a, b) => b.start - a.start);
+  // 从 done 移除已归档项（只保留本周一的）
+  wk.done = wk.done.filter(t => t.completedAt && t.completedAt >= mondayStart);
+  return true;
+}
+/* ============ 月度自动归档（跨月后自动把上月完成项归档） ============ */
+/* 本月 1 号 00:00 时间戳 */
+function getThisMonthStart() {
+  const now = new Date();
+  const m = new Date(now.getFullYear(), now.getMonth(), 1);
+  m.setHours(0, 0, 0, 0);
+  return m.getTime();
+}
+/* 返回某时间点所在月的标签 "2026-08" 与月初零点 */
+function monthInfo(ts) {
+  const d = new Date(ts);
+  const start = new Date(d.getFullYear(), d.getMonth(), 1);
+  start.setHours(0, 0, 0, 0);
+  const label = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  return { label, start: start.getTime() };
+}
+/* 核心：把本月 1 号之前完成的项，从 done 按月归档进 history（幂等） */
+function archiveMonthOlderTasks() {
+  const mk = state.tasks.month;
+  if (!mk.history) mk.history = [];
+  const monthStart = getThisMonthStart();
+  const older = mk.done.filter(t => !t.completedAt || t.completedAt < monthStart);
+  if (older.length === 0) return false;
+  // 按月分组
+  const groups = {};
+  older.forEach(t => {
+    const info = monthInfo(t.completedAt || Date.now());
+    if (!groups[info.label]) groups[info.label] = { label: info.label, start: info.start, items: [] };
+    groups[info.label].items.push(t);
+  });
+  Object.values(groups).forEach(g => {
+    g.items.sort((a, b) => b.completedAt - a.completedAt);
+    const exist = mk.history.find(h => h.label === g.label);
+    if (exist) {
+      const seen = new Set(exist.items.map(i => i.id));
+      exist.items = g.items.filter(i => !seen.has(i.id)).concat(exist.items);
+    } else {
+      mk.history.push(g);
+    }
+  });
+  // 归档区按月从新到旧排
+  mk.history.sort((a, b) => b.start - a.start);
+  // 从 done 移除已归档项（只保留本月的）
+  mk.done = mk.done.filter(t => t.completedAt && t.completedAt >= monthStart);
+  return true;
+}
+/* 周 + 月统一自动归档（任一发生变更即返回 true） */
+function autoArchive() {
+  const a = archiveOlderTasks();
+  const b = archiveMonthOlderTasks();
+  return a || b;
+}
+/* 计算某时间戳所在周/月的展示日期区间，如 "2026-09-07 ~ 09-13" */
+function periodRange(start, dim) {
+  if (!start) return "";
+  const s = new Date(start);
+  const pad = n => String(n).padStart(2, "0");
+  const head = `${s.getFullYear()}-${pad(s.getMonth()+1)}-${pad(s.getDate())}`;
+  const e = new Date(start);
+  if (dim === "month") {
+    e.setMonth(e.getMonth() + 1);
+    e.setDate(0);              // 该月最后一天
+  } else {
+    e.setDate(e.getDate() + 6); // 周日
+  }
+  const tail = (e.getMonth() === s.getMonth()) ? pad(e.getDate()) : `${pad(e.getMonth()+1)}-${pad(e.getDate())}`;
+  return `${head} ~ ${tail}`;
+}
+
+/* 渲染历史归档折叠区（周/月通用，每组带下拉按钮可折叠展开） */
+function renderHistory(el, history, dim, expandedSet) {
+  if (!el) return;
+  if (!history || history.length === 0) {
+    el.innerHTML = '<div class="task-empty">暂无历史归档 · 跨期后自动归档到此</div>';
+    return;
+  }
+  const unit = dim === "month" ? "月" : "周";
+  el.innerHTML = history.map(h => {
+    const isOpen = expandedSet.has(h.label);
+    const items = h.items || [];
+    return `
+    <details class="history-group" data-label="${escapeHtml(h.label)}" data-dim="${dim}"${isOpen ? " open" : ""}>
+      <summary class="history-head" title="点击折叠 / 展开该${unit}的任务">
+        <span class="history-caret"></span>
+        <span class="history-label">${escapeHtml(h.label)}</span>
+        <span class="history-count">完成 ${items.length} 项</span>
+        <span class="history-hint">${periodRange(h.start, dim)}</span>
+      </summary>
+      <ul class="task-list scrollbar">
+        ${items.length
+          ? items.map(t => `
+          <li class="task-item done">
+            <span class="task-checkbox"></span>
+            <span class="task-text">${escapeHtml(t.text)}</span>
+            <span class="task-time" title="完成时间">${formatCompletedAt(t.completedAt)}</span>
+          </li>`).join("")
+          : '<li class="task-empty">该' + unit + '暂无任务</li>'}
+      </ul>
+    </details>`;
+  }).join("");
+}
+function renderWeekHistory() {
+  renderHistory(document.getElementById("weekHistory"), state.tasks.week.history || [], "week", expandedWeek);
+}
+function renderMonthHistory() {
+  renderHistory(document.getElementById("monthHistory"), state.tasks.month.history || [], "month", expandedMonth);
+}
+
+/* 组头折叠/展开：把 DOM 的真实开关状态同步回展开集合（局部刷新，不整体重渲染） */
+function bindHistoryToggles() {
+  document.querySelectorAll("details.history-group").forEach(g => {
+    if (g._bound) return;
+    g._bound = true;
+    const set = g.dataset.dim === "month" ? expandedMonth : expandedWeek;
+    const label = g.dataset.label;
+    g.addEventListener("toggle", () => {
+      if (g.open) set.add(label); else set.delete(label);
+    });
+  });
+}
+/* 首帧设定各组的默认展开状态：最近 2 组展开，更早的收起。
+   只在第一次渲染时执行，之后一律尊重用户手动折叠/展开的结果。 */
+function initHistoryExpand(container, dim, maxOpen) {
+  const flag = dim === "month" ? "monthInit" : "weekInit";
+  if (initHistoryExpand[flag]) return;
+  const groups = container ? container.querySelectorAll("details.history-group") : [];
+  if (groups.length === 0) return;
+  groups.forEach((g, i) => {
+    if (i < maxOpen) g.setAttribute("open", "");
+    else g.removeAttribute("open");
+  });
+  initHistoryExpand[flag] = true;
 }
 
 /* ============ 卡片 Tab 切换 ============ */
@@ -565,6 +811,8 @@ function renderTasks(type) {
         <button class="task-del" onclick="deleteTask('${type}','${t.id}',true)">✕</button>
       </li>`).join("");
   }
+  if (type === "week") { renderWeekHistory(); bindHistoryToggles(); initHistoryExpand(document.getElementById("weekHistory"), "week", 2); }
+  if (type === "month") { renderMonthHistory(); bindHistoryToggles(); initHistoryExpand(document.getElementById("monthHistory"), "month", 2); }
 }
 
 /* ============ 共享工作区 ============ */
@@ -739,6 +987,8 @@ async function syncFromCloud() {
       const seen = new Set();
       state.boards = state.boards.filter(b => (seen.has(b.id) ? false : (seen.add(b.id), true)));
       localStorage.setItem(STORE_KEY, JSON.stringify(state));
+      // 云端数据可能含上周/上月任务：一并自动归档后写回
+      if (autoArchive()) saveState();
       console.log("已从云端同步状态(云端更新)");
       render();
       toast("已同步云端最新数据");
@@ -944,6 +1194,9 @@ function renderStats() {
   ["memo","week","month"].forEach(k => {
     todo += state.tasks[k].active.length;
     done += state.tasks[k].done.length;
+    if (state.tasks[k].history) {
+      state.tasks[k].history.forEach(h => done += h.items ? h.items.length : 0);
+    }
   });
   state.boards.forEach(b => files += b.files.length);
   document.getElementById("statTodo").textContent = todo;
@@ -972,6 +1225,8 @@ function render() {
 function init() {
   document.getElementById("todayText").textContent = todayText();
   initTabs();
+  // 跨期自动归档：打开页面时若已完成项属于上一周/上一月，自动分割归档
+  if (autoArchive()) saveState();
   render();
   // 启动时从云端拉取状态（若云端更新则覆盖）——分钟内手工可用
   syncFromCloud();
