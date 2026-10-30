@@ -355,7 +355,7 @@
 
   /* ===== 周报中心（方形模块） ===== */
   .report-center {
-    width: 100%; max-width: 420px; padding: 18px; margin: 0 0 24px;
+    width: 100%; padding: 18px;
     display: flex; flex-direction: column; gap: 14px;
   }
   .rc-title { font-size: 15px; font-weight: 600; }
@@ -378,7 +378,7 @@
   }
   .rc-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); cursor: pointer; user-select: none; }
   .rc-check input { cursor: pointer; }
-  .rc-hint { font-size: 12px; color: var(--text-3); white-space: pre-line; line-height: 1.7; }
+  .rc-hint { margin-top: auto; font-size: 12px; color: var(--text-3); white-space: pre-line; line-height: 1.7; }
   .rc-hint .ok { color: var(--success); }
 
   /* ===== 周报数据库列表 ===== */
@@ -552,22 +552,22 @@
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- ===== 周报中心（方形模块，位于共享工作区上方） ===== -->
-    <div class="report-center card">
-      <div class="rc-title">周报中心</div>
-      <div class="rc-tiles">
-        <button class="rc-tile primary" onclick="openReportModal()">一键生成周报</button>
-        <button class="rc-tile" id="learnStyleBtn" onclick="learnReportStyle()">同步学习风格</button>
-        <label class="rc-tile" for="importReportFile">导入 Word/Excel</label>
-        <button class="rc-tile" onclick="openReportDb()">周报数据库 <span class="rc-badge" id="reportCount">0</span></button>
-        <input type="file" id="importReportFile" class="hidden-file-input" accept=".docx,.xlsx,.txt,.md" multiple>
+      <!-- ===== 周报中心（本月计划右侧 · 板块二上方） ===== -->
+      <div class="report-center card">
+        <div class="rc-title">周报中心</div>
+        <div class="rc-tiles">
+          <button class="rc-tile primary" onclick="openReportModal()">一键生成周报</button>
+          <button class="rc-tile" id="learnStyleBtn" onclick="learnReportStyle()">同步学习风格</button>
+          <label class="rc-tile" for="importReportFile">导入 Word/Excel</label>
+          <button class="rc-tile" onclick="openReportDb()">周报数据库 <span class="rc-badge" id="reportCount">0</span></button>
+          <input type="file" id="importReportFile" class="hidden-file-input" accept=".docx,.xlsx,.txt,.md" multiple>
+        </div>
+        <label class="rc-check">
+          <input type="checkbox" id="useStyleRef" checked> 生成时使用历史风格
+        </label>
+        <div class="rc-hint" id="rcHint">本周已完成 0 项 · 数据库 0 篇</div>
       </div>
-      <label class="rc-check">
-        <input type="checkbox" id="useStyleRef" checked> 生成时使用历史风格
-      </label>
-      <div class="rc-hint" id="rcHint">本周已完成 0 项 · 数据库 0 篇</div>
     </div>
 
     <!-- 共享工作区 -->
