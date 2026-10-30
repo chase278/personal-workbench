@@ -430,9 +430,9 @@
       </div>
     </div>
 
-    <!-- ===== 大模型配置 ===== -->
+    <!-- ===== 模型配置 ===== -->
     <div>
-      <div class="section-title">大模型配置</div>
+      <div class="section-title">模型配置</div>
       <div class="config-block">
         <div class="cfg-field">
           <label>接口地址</label>
@@ -451,8 +451,9 @@
         </div>
         <div class="cfg-actions">
           <button class="cfg-btn primary" type="button" onclick="saveLlmConfig(true)">保存配置</button>
+          <button class="cfg-btn" id="testLlmBtn" type="button" onclick="testLlmConfig()">测试连接</button>
         </div>
-        <div class="cfg-hint">配置仅保存在本机浏览器，不会上传。接口需兼容 OpenAI /chat/completions。如遇跨域报错，请改用支持 CORS 的接口或通过本地服务打开页面。</div>
+        <div class="cfg-hint" id="llmTestHint">配置仅保存在本机浏览器，不会上传。接口需兼容 OpenAI /chat/completions。</div>
       </div>
     </div>
 
@@ -1414,7 +1415,7 @@ function saveProfile() {
   toast("个人资料已保存");
 }
 
-/* ============ 大模型配置 & 周报生成 ============ */
+/* ============ 模型配置 & 周报生成 ============ */
 const LLM_CFG_KEY = "workbench_llm_cfg_v1";
 const CLOUD_CFG_KEY = "workbench_cloud_cfg_v1";
 
@@ -1431,7 +1432,7 @@ function saveLlmConfig(showToast) {
     apiKey: document.getElementById("llmApiKey").value.trim()
   };
   localStorage.setItem(LLM_CFG_KEY, JSON.stringify(cfg));
-  if (showToast) toast("大模型配置已保存");
+  if (showToast) toast("模型配置已保存");
 }
 function fillLlmConfig() {
   const cfg = loadLlmConfig();
@@ -1446,6 +1447,35 @@ function toggleApiKey() {
     el.type = "text"; btn.textContent = "🙈"; btn.title = "隐藏";
   } else {
     el.type = "password"; btn.textContent = "👁"; btn.title = "显示";
+  }
+}
+function setLlmHint(text, ok) {
+  const el = document.getElementById("llmTestHint");
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = ok === true ? "var(--success)" : (ok === false ? "var(--danger)" : "");
+}
+/* 测试连接：用极短输入探一次 /chat/completions，验证地址、Key、模型是否可用 */
+async function testLlmConfig() {
+  const btn = document.getElementById("testLlmBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "测试中..."; }
+  setLlmHint("正在测试连接...", null);
+  const t0 = Date.now();
+  try {
+    // 先把当前输入框的值落盘，避免测试用的是旧配置
+    saveLlmConfig(false);
+    const reply = await callLlm([
+      { role: "user", content: "只回复两个字：正常" }
+    ], 0, 16);
+    const ms = Date.now() - t0;
+    const brief = String(reply).replace(/\s+/g, " ").trim().slice(0, 20) || "（空回复）";
+    setLlmHint("连接成功 · 耗时 " + ms + "ms · 模型回复：" + brief, true);
+    toast("模型连接成功（" + ms + "ms）");
+  } catch (e) {
+    setLlmHint("连接失败：" + (e.message || e), false);
+    toast("连接失败：" + (e.message || e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "测试连接"; }
   }
 }
 
@@ -1597,18 +1627,24 @@ function getThisWeekDoneTasks() {
 let currentReportText = "";
 
 /* ===== 通用大模型调用 ===== */
-async function callLlm(messages, temperature) {
+async function callLlm(messages, temperature, maxTokens) {
   const cfg = loadLlmConfig();
   const baseUrl = (cfg.baseUrl || "").replace(/\/+$/, "");
   const apiKey = cfg.apiKey || "";
   const model = cfg.model || "";
-  if (!baseUrl) throw new Error("请先在左侧「大模型配置」中填写接口地址");
+  if (!baseUrl) throw new Error("请先在左侧「模型配置」中填写接口地址");
   if (!apiKey) throw new Error("请先填写 API Key");
   if (!model) throw new Error("请先填写模型名称");
+  const payload = {
+    model: model,
+    messages: messages,
+    temperature: temperature == null ? 0.3 : temperature
+  };
+  if (maxTokens) payload.max_tokens = maxTokens;
   const res = await fetch(baseUrl + "/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
-    body: JSON.stringify({ model: model, messages: messages, temperature: temperature == null ? 0.3 : temperature })
+    body: JSON.stringify(payload)
   });
   if (!res.ok) {
     let msg = "HTTP " + res.status;
