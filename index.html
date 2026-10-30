@@ -353,17 +353,32 @@
   .report-loading { text-align: center; padding: 34px 0; color: var(--text-3); font-size: 13px; }
   .report-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 
-  /* ===== 周报中心（日期下方独立模块） ===== */
-  .report-center { padding: 16px 18px; margin-bottom: 20px; }
-  .rc-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  /* ===== 周报中心（方形模块） ===== */
+  .report-center {
+    width: 100%; max-width: 420px; padding: 18px; margin: 0 0 24px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
   .rc-title { font-size: 15px; font-weight: 600; }
-  .rc-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .rc-check { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-2); cursor: pointer; user-select: none; }
+  .rc-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .rc-tile {
+    height: 64px; border: 1px solid var(--border); border-radius: 10px;
+    background: #fff; color: var(--text); font-size: 13px; font-weight: 500;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    gap: 6px; transition: all .15s; font-family: inherit; text-align: center;
+  }
+  .rc-tile:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+  .rc-tile.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .rc-tile.primary:hover { opacity: .92; background: var(--primary); color: #fff; }
+  .rc-tile:disabled { opacity: .6; cursor: not-allowed; }
+  .rc-badge {
+    min-width: 20px; height: 18px; padding: 0 6px; border-radius: 9px;
+    background: var(--primary-soft); color: var(--primary);
+    font-size: 11px; font-weight: 600;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .rc-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); cursor: pointer; user-select: none; }
   .rc-check input { cursor: pointer; }
-  .report-btn.ghost { background: #fff; color: var(--primary); border-color: #c9d8f5; }
-  .report-btn.ghost:hover { background: var(--primary-soft); }
-  .report-btn:disabled { opacity: .6; cursor: not-allowed; }
-  .rc-hint { margin-top: 10px; font-size: 12px; color: var(--text-3); white-space: pre-line; line-height: 1.7; }
+  .rc-hint { font-size: 12px; color: var(--text-3); white-space: pre-line; line-height: 1.7; }
   .rc-hint .ok { color: var(--success); }
 
   /* ===== 周报数据库列表 ===== */
@@ -487,24 +502,6 @@
       <div class="date" id="todayText"></div>
     </div>
 
-    <!-- ===== 周报中心（日期下方独立模块） ===== -->
-    <div class="card report-center">
-      <div class="rc-head">
-        <div class="rc-title">周报中心</div>
-        <div class="rc-actions">
-          <label class="rc-check" title="生成时参考已学习的历史周报风格">
-            <input type="checkbox" id="useStyleRef" checked> 使用历史风格
-          </label>
-          <button class="report-btn" onclick="openReportModal()">📝 一键生成周报</button>
-          <button class="report-btn ghost" id="learnStyleBtn" onclick="learnReportStyle()">🧠 同步学习风格</button>
-          <label class="report-btn ghost" for="importReportFile">📥 导入 Word/Excel</label>
-          <input type="file" id="importReportFile" class="hidden-file-input" accept=".docx,.xlsx,.txt,.md" multiple>
-          <button class="report-btn ghost" onclick="openReportDb()">🗂 周报数据库 <b id="reportCount">0</b></button>
-        </div>
-      </div>
-      <div class="rc-hint" id="rcHint">本周已完成 0 项 · 数据库 0 篇</div>
-    </div>
-
     <!-- 备忘录 / 周计划 / 月计划 三卡片 -->
     <div class="main-grid">
       <!-- 备忘录 -->
@@ -555,6 +552,22 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- ===== 周报中心（方形模块，位于共享工作区上方） ===== -->
+    <div class="report-center card">
+      <div class="rc-title">周报中心</div>
+      <div class="rc-tiles">
+        <button class="rc-tile primary" onclick="openReportModal()">一键生成周报</button>
+        <button class="rc-tile" id="learnStyleBtn" onclick="learnReportStyle()">同步学习风格</button>
+        <label class="rc-tile" for="importReportFile">导入 Word/Excel</label>
+        <button class="rc-tile" onclick="openReportDb()">周报数据库 <span class="rc-badge" id="reportCount">0</span></button>
+        <input type="file" id="importReportFile" class="hidden-file-input" accept=".docx,.xlsx,.txt,.md" multiple>
+      </div>
+      <label class="rc-check">
+        <input type="checkbox" id="useStyleRef" checked> 生成时使用历史风格
+      </label>
+      <div class="rc-hint" id="rcHint">本周已完成 0 项 · 数据库 0 篇</div>
     </div>
 
     <!-- 共享工作区 -->
@@ -1717,7 +1730,7 @@ async function learnReportStyle() {
   const list = getReports();
   if (!list.length) { toast("数据库为空，先导入或保存几篇周报"); return; }
   const btn = document.getElementById("learnStyleBtn");
-  if (btn) { btn.disabled = true; btn.textContent = "🧠 学习中..."; }
+  if (btn) { btn.disabled = true; btn.textContent = "学习中..."; }
   try {
     const samples = list.slice(0, 5).map((r, i) =>
       "【样例 " + (i + 1) + "】\n" + String(r.content).slice(0, 1500)
@@ -1737,7 +1750,7 @@ async function learnReportStyle() {
   } catch (e) {
     toast("学习失败：" + (e.message || e));
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = "🧠 同步学习风格"; }
+    if (btn) { btn.disabled = false; btn.textContent = "同步学习风格"; }
   }
 }
 
@@ -1955,7 +1968,13 @@ async function importReportFiles(files) {
   if (errors.length) toast("部分导入失败：" + errors.join("；"));
   renderReportCenter();
   const db = document.getElementById("reportDbModal");
-  if (db && db.classList.contains("show")) renderReportDbList();
+  if (db && db.classList.contains("show")) {
+    renderReportDbList();
+  } else if (ok) {
+    // 导入成功后直接打开数据库，方便确认解析结果
+    renderReportDbList();
+    openModal("reportDbModal");
+  }
 }
 document.getElementById("importReportFile").addEventListener("change", function (e) {
   importReportFiles(e.target.files).then(function () { e.target.value = ""; });
