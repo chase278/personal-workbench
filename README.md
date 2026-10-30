@@ -137,11 +137,13 @@ personal-workbench/
 | POST | `/api/config/reset` | 清除网页端保存的配置，回到环境变量 / 开发模式 |
 | GET / POST | `/api/sign-upload?filename=&folder=` | 签发预签名 **PUT** URL（10 分钟有效），供前端直传 |
 | GET | `/api/sign-download?key=` | 签发预签名 **GET** URL，私有桶下载 |
-| GET / POST | `/api/delete?key=` | 删除 COS 对象 |
+| POST | `/api/delete?key=` | 删除 COS 对象（仅接受 POST） |
 | GET | `/api/state` | 读取云端 `state.json`，不存在返回 `null` |
-| POST / PUT | `/api/state` | 写入云端 `state.json` |
+| POST / PUT | `/api/state` | 写入云端 `state.json`（需 `Content-Type: application/json`） |
 
-所有接口带 CORS 头，允许 `file://` 页面直接调用。服务默认只监听 `127.0.0.1`，可用 `HOST=0.0.0.0` 覆盖。
+服务默认只监听 `127.0.0.1`，可用 `HOST=0.0.0.0` 覆盖。
+
+**访问控制**：CORS 仅放行本机来源（`localhost` / `127.0.0.1`）与 `file://` 页面（`Origin: null`）；文件类接口只允许操作 `workbench/` 前缀内的对象，越界请求返回 403；`folder` 参数经白名单净化，无法跳转到其他目录。局域网部署时可在 `.env` 中设置 `AUTH_TOKEN` 开启令牌校验（开启后所有 `/api/*` 需带 `Authorization: Bearer <token>`，前端需同步增加令牌配置）。
 
 ### 数据模型
 
@@ -238,9 +240,10 @@ node server.js                      # 用网页端配置方式
 
 ## 四、安全说明
 
-- `index.html` 中**不含任何密钥**，`server.js` 也不含——密钥只来自 `.env` 或网页端写入的 `.cos-config.json`（二者都已 gitignore）
+- `index.html` 中**不含任何密钥**，`server.js` 也不含——密钥只来自 `.env` 或网页端写入的 `.cos-config.json`（二者都已 gitignore，写入时权限 600）
 - 上游仓库中所有敏感值均已替换为占位符，请使用自己的密钥对
-- 服务默认只监听 `127.0.0.1`，且**没有鉴权**：如用 `HOST=0.0.0.0` 暴露到局域网请谨慎，切勿部署到公网
+- 服务默认只监听 `127.0.0.1`。暴露到局域网前请在 `.env` 设置 `AUTH_TOKEN` 开启令牌校验，切勿部署到公网
+- CORS 仅放行本机与 `file://` 页面；文件接口限制在 `workbench/` 前缀内
 - `/api/config` 会接收网页提交的密钥，只有在本机可达的前提下才是安全的
 - 若你的密钥曾以明文形式出现在代码、聊天记录或备份中，建议到腾讯云控制台【访问管理 > API 密钥管理】轮换一次
 
