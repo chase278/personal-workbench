@@ -366,8 +366,14 @@ const server = http.createServer(async (req, res) => {
         const text = await up.text();
         let data = null;
         try { data = JSON.parse(text); } catch (e) { /* 非 JSON 响应 */ }
-        const content = data && data.choices && data.choices[0] && data.choices[0].message
-          ? data.choices[0].message.content : null;
+        const choice = data && data.choices && data.choices[0] ? data.choices[0] : null;
+        const upstreamMsg = choice && choice.message ? choice.message : {};
+        const content = upstreamMsg.content;
+        /* 推理模型（如 DeepSeek-R 系列 / 带 reasoning 的网关）会把 token 先用于思考，
+           思考过程可能放在 reasoning_content，正文 content 为空 */
+        const reasoning = upstreamMsg.reasoning_content || upstreamMsg.reasoning || upstreamMsg.thinking || '';
+        const finish = choice ? choice.finish_reason : '';
+        const usage = data && data.usage ? data.usage : null;
         if (!up.ok) {
           const detail = (data && data.error && (data.error.message || data.error.code)) || text.slice(0, 200);
           res.writeHead(502, corsHeaders(req));
@@ -375,8 +381,31 @@ const server = http.createServer(async (req, res) => {
           return;
         }
         if (!content) {
+          /* 有思考过程但没正文：多为 max_tokens 被思考耗尽（finish_reason=length） */
+          if (reasoning) {
+            res.writeHead(200, corsHeaders(req));
+            res.end(JSON.stringify({
+              ok: true,
+              content: String(reasoning),
+              reasoning: true,
+              note: '该模型为推理模型，本次仅返回思考过程（正文为空）' +
+                (finish ? '，finish_reason=' + finish : '') +
+                (usage ? '，completion_tokens=' + usage.completion_tokens : '')
+            }));
+            return;
+          }
+          const why = [];
+          if (finish) why.push('finish_reason=' + finish);
+          if (usage && usage.completion_tokens != null) why.push('completion_tokens=' + usage.completion_tokens);
+          let hint = '';
+          if (finish === 'length') hint = '。输出额度被截断，请调大 max_tokens（推理模型建议 512 以上）或改用非推理模型';
+          else if (finish === 'content_filter') hint = '。内容被安全策略拦截';
           res.writeHead(502, corsHeaders(req));
-          res.end(JSON.stringify({ ok: false, error: '模型返回内容为空，响应片段：' + text.slice(0, 200) }));
+          res.end(JSON.stringify({
+            ok: false,
+            error: '模型返回内容为空' + (why.length ? '（' + why.join('，') + '）' : '') + hint +
+              '。响应片段：' + text.slice(0, 300)
+          }));
           return;
         }
         res.writeHead(200, corsHeaders(req));

@@ -1495,9 +1495,10 @@ async function testLlmConfig() {
   try {
     // 先把当前输入框的值落盘，避免测试用的是旧配置
     saveLlmConfig(false);
+    // max_tokens 给足：推理模型会把额度先用于思考过程，16 会直接导致正文为空
     const reply = await callLlm([
       { role: "user", content: "只回复两个字：正常" }
-    ], 0, 16);
+    ], 0, 512, { allowReasoning: true });
     const ms = Date.now() - t0;
     const brief = String(reply).replace(/\s+/g, " ").trim().slice(0, 20) || "（空回复）";
     setLlmHint("连接成功 · 耗时 " + ms + "ms · 模型回复：" + brief, true);
@@ -1658,7 +1659,7 @@ function getThisWeekDoneTasks() {
 let currentReportText = "";
 
 /* ===== 通用大模型调用 ===== */
-async function callLlm(messages, temperature, maxTokens) {
+async function callLlm(messages, temperature, maxTokens, opts) {
   const cfg = loadLlmConfig();
   const baseUrl = (cfg.baseUrl || "").replace(/\/+$/, "");
   const apiKey = cfg.apiKey || "";
@@ -1677,7 +1678,13 @@ async function callLlm(messages, temperature, maxTokens) {
     });
     let pj = null;
     try { pj = await pr.json(); } catch (_) {}
-    if (pr.ok && pj && pj.ok) return String(pj.content).trim();
+    if (pr.ok && pj && pj.ok) {
+      /* 推理模型可能只返回思考过程（正文为空）：测试连接可接受，业务生成不可用 */
+      if (pj.reasoning && !(opts && opts.allowReasoning)) {
+        throw new Error(pj.note || "该模型仅返回思考过程，未生成正文");
+      }
+      return String(pj.content).trim();
+    }
     if (pj && pj.error) throw new Error(pj.error);
     throw new Error("本地服务返回 HTTP " + pr.status);
   } catch (e) {
@@ -1711,9 +1718,10 @@ async function callLlm(messages, temperature, maxTokens) {
     throw new Error(msg);
   }
   const data = await res.json();
-  const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-  if (!content) throw new Error("大模型返回内容为空");
-  return content.trim();
+  const m = data && data.choices && data.choices[0] && data.choices[0].message;
+  const content = m && (m.content || m.reasoning_content);
+  if (!content) throw new Error("大模型返回内容为空（可能是推理模型额度被思考过程占满）");
+  return String(content).trim();
 }
 
 /* ===== 周报数据库 ===== */
