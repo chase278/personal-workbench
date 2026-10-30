@@ -1020,10 +1020,10 @@ function renderTasks(type) {
     activeEl.innerHTML = '<li class="task-empty">暂无内容，输入后添加到上方</li>';
   } else {
     activeEl.innerHTML = active.map(t => `
-      <li class="task-item" onclick="toggleTask('${type}','${t.id}')">
+      <li class="task-item" data-act="toggle" data-type="${escapeHtml(type)}" data-id="${escapeHtml(t.id)}">
         <span class="task-checkbox"></span>
         <span class="task-text">${escapeHtml(t.text)}</span>
-        <button class="task-del" onclick="event.stopPropagation();deleteTask('${type}','${t.id}',false)">✕</button>
+        <button class="task-del" data-act="del-task" data-type="${escapeHtml(type)}" data-id="${escapeHtml(t.id)}" data-done="0">✕</button>
       </li>`).join("");
   }
 
@@ -1035,12 +1035,44 @@ function renderTasks(type) {
         <span class="task-checkbox"></span>
         <span class="task-text">${escapeHtml(t.text)}</span>
         <span class="task-time" title="完成时间">${formatCompletedAt(t.completedAt)}</span>
-        <button class="task-del" onclick="deleteTask('${type}','${t.id}',true)">✕</button>
+        <button class="task-del" data-act="del-task" data-type="${escapeHtml(type)}" data-id="${escapeHtml(t.id)}" data-done="1">✕</button>
       </li>`).join("");
   }
   if (type === "week") { renderWeekHistory(); bindHistoryToggles(); initHistoryExpand(document.getElementById("weekHistory"), "week", 2); }
   if (type === "month") { renderMonthHistory(); bindHistoryToggles(); initHistoryExpand(document.getElementById("monthHistory"), "month", 2); }
 }
+
+/* ============ 全局事件委托 ============
+ * 列表项的操作一律通过 data-act + data-* 属性传递参数，不在 HTML 中拼接 JS 代码，
+ * id 等动态值经 data 属性读取（浏览器自动安全解码），彻底消除行内事件注入面。 */
+document.addEventListener("click", function (e) {
+  const el = e.target.closest("[data-act]");
+  if (!el) return;
+  const act = el.dataset.act || "";
+  if (act === "toggle") {
+    toggleTask(el.dataset.type, el.dataset.id);
+  } else if (act === "del-task") {
+    deleteTask(el.dataset.type, el.dataset.id, el.dataset.done === "1");
+  } else if (act === "rename-board") {
+    renameBoard(el.dataset.bid);
+  } else if (act === "del-board") {
+    deleteBoard(el.dataset.bid);
+  } else if (act === "pick-file") {
+    openFilePicker(el.dataset.bid);
+  } else if (act === "toggle-select") {
+    toggleSelect(el.dataset.bid, el.dataset.fid);
+  } else if (act === "download") {
+    downloadFile(el.dataset.bid, el.dataset.fid);
+  } else if (act === "del-file") {
+    deleteFile(el.dataset.bid, el.dataset.fid);
+  } else if (act === "upload") {
+    uploadSelected(el.dataset.bid);
+  } else if (act === "view-report") {
+    viewReport(el.dataset.rid);
+  } else if (act === "del-report") {
+    deleteReport(el.dataset.rid);
+  }
+});
 
 /* ============ 共享工作区 ============ */
 function addBoard() {
@@ -1142,7 +1174,7 @@ async function deleteFile(boardId, fileId) {
   // 若该文件已上传到 COS（有 objectKey），先调用签名服务删除云端对象
   if (fileItem.serverUploaded && fileItem.objectKey) {
     try {
-      const r = await fetch(`${SIGN_SERVER}/api/delete?key=${encodeURIComponent(fileItem.objectKey)}`);
+      const r = await fetch(`${SIGN_SERVER}/api/delete?key=${encodeURIComponent(fileItem.objectKey)}`, { method: "POST" });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         throw new Error(j.error || ("HTTP " + r.status));
@@ -1358,25 +1390,24 @@ function renderBoards() {
     <div class="ws-card">
       <div class="ws-card-header">
         <span class="ws-card-title">${escapeHtml(b.name)}</span>
-        <button class="ws-rename" title="重命名" onclick="renameBoard('${b.id}')">✎</button>
-        <button class="ws-del" title="删除板块" onclick="deleteBoard('${b.id}')">✕</button>
+        <button class="ws-rename" title="重命名" data-act="rename-board" data-bid="${escapeHtml(b.id)}">✎</button>
+        <button class="ws-del" title="删除板块" data-act="del-board" data-bid="${escapeHtml(b.id)}">✕</button>
       </div>
-      <div class="upload-drop" onclick="openFilePicker('${b.id}')">＋ 点击选择文件到该板块</div>
+      <div class="upload-drop" data-act="pick-file" data-bid="${escapeHtml(b.id)}">＋ 点击选择文件到该板块</div>
       <ul class="ws-files scrollbar">
         ${b.files.length === 0 ? '<li class="task-empty">暂无文件</li>' : b.files.map(f => `
           <li class="ws-file">
-            <span class="check-btn ${f.serverUploaded ? 'disabled' : ''}" data-bid="${b.id}" data-fid="${f.id}"
-              title="${f.serverUploaded ? '已上传服务器，无需再传' : '选择文件以批量上传'}"
-              onclick="toggleSelect('${b.id}','${f.id}')">✓</span>
+            <span class="check-btn ${f.serverUploaded ? 'disabled' : ''}" data-act="toggle-select" data-bid="${escapeHtml(b.id)}" data-fid="${escapeHtml(f.id)}"
+              title="${f.serverUploaded ? '已上传服务器，无需再传' : '选择文件以批量上传'}">✓</span>
             <span class="fname">${escapeHtml(f.name)} ${f.size ? `<small style="color:var(--text-3)">(${formatSize(f.size)})</small>` : ""}</span>
             <span class="file-badge ${f.serverUploaded ? 'remote' : 'local'}">${f.serverUploaded ? '已同步' : '待上传'}</span>
-            <button class="fdown" onclick="downloadFile('${b.id}','${f.id}')">下载</button>
-            <button class="fdel" onclick="deleteFile('${b.id}','${f.id}')">✕</button>
+            <button class="fdown" data-act="download" data-bid="${escapeHtml(b.id)}" data-fid="${escapeHtml(f.id)}">下载</button>
+            <button class="fdel" data-act="del-file" data-bid="${escapeHtml(b.id)}" data-fid="${escapeHtml(f.id)}">✕</button>
           </li>`).join("")}
       </ul>
       <div class="ws-toolbar">
         <span class="count">${localCount ? localCount + ' 个待上传 · ' : ''}${remoteCount} 个已同步</span>
-        <button class="ws-sync-btn" data-bid="${b.id}" onclick="uploadSelected('${b.id}')"
+        <button class="ws-sync-btn" data-act="upload" data-bid="${escapeHtml(b.id)}"
           ${localCount ? '' : 'disabled'} title="${localCount ? '将勾选的本地文件上传到服务器' : '没有待上传的本地文件'}">
           ⇪ 上传到服务器
         </button>
@@ -1741,8 +1772,8 @@ function renderReportDbList() {
       '<div class="ri-preview">' + preview + '</div>' +
       '</div>' +
       '<div class="ri-ops">' +
-      '<button class="cfg-btn" onclick="viewReport(\'' + r.id + '\')">查看</button>' +
-      '<button class="cfg-btn danger" onclick="deleteReport(\'' + r.id + '\')">删除</button>' +
+      '<button class="cfg-btn" data-act="view-report" data-rid="' + escapeHtml(r.id) + '">查看</button>' +
+      '<button class="cfg-btn danger" data-act="del-report" data-rid="' + escapeHtml(r.id) + '">删除</button>' +
       '</div>' +
       '</div>';
   }).join("");
@@ -1894,12 +1925,30 @@ function readZipEntries(buf) {
   }
   return entries;
 }
-async function inflateRawBytes(bytes) {
+async function inflateRawBytes(bytes, maxOut) {
   if (typeof DecompressionStream === "undefined") {
     throw new Error("当前浏览器不支持解压 Office 文件，请使用新版 Chrome / Edge / Safari");
   }
+  /* 限制解压输出总量（默认 32MB），防止构造的超高压缩比文件耗尽内存 */
+  const limit = maxOut || 32 * 1024 * 1024;
   const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+  const reader = stream.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const r = await reader.read();
+    if (r.done) break;
+    total += r.value.length;
+    if (total > limit) {
+      try { reader.cancel(); } catch (e) { /* ignore */ }
+      throw new Error("文件解压后体积过大，已中止");
+    }
+    chunks.push(r.value);
+  }
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) { out.set(c, off); off += c.length; }
+  return out;
 }
 async function readZipEntry(buf, entry) {
   const view = new DataView(buf);
@@ -2036,7 +2085,7 @@ function renderProfile() {
   document.getElementById("profileName").textContent = p.name || "未设置";
   document.getElementById("profileEn").textContent = p.en || (p.name ? "" : "—");
   const avatarChar = (p.name || "U").charAt(0).toUpperCase();
-  document.getElementById("profileAvatar").textContent = escapeHtml(avatarChar);
+  document.getElementById("profileAvatar").textContent = avatarChar;
   document.getElementById("profileDept").textContent = p.dept || "未填写";
   document.getElementById("profileJob").textContent = p.job || "未填写";
 }
