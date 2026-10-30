@@ -138,6 +138,7 @@ personal-workbench/
 | GET / POST | `/api/sign-upload?filename=&folder=` | 签发预签名 **PUT** URL（10 分钟有效），供前端直传 |
 | GET | `/api/sign-download?key=` | 签发预签名 **GET** URL，私有桶下载 |
 | POST | `/api/delete?key=` | 删除 COS 对象（仅接受 POST） |
+| POST | `/api/llm` | 模型请求转发（负载含 `baseUrl` / `apiKey` / `model` / `messages`），规避浏览器跨域限制 |
 | GET | `/api/state` | 读取云端 `state.json`，不存在返回 `null` |
 | POST / PUT | `/api/state` | 写入云端 `state.json`（需 `Content-Type: application/json`） |
 
@@ -256,8 +257,8 @@ node server.js                      # 用网页端配置方式
 - 云同步为 last-write-wins，多设备同时编辑可能互相覆盖，不适合高频并发场景
 - 周报数据库单篇最多 8000 字、最多 40 篇（控制 `state.json` 体积，服务端上限 2 MB）
 - 仅支持 `.docx` / `.xlsx`，旧版 `.doc` / `.xls` 需另存为新格式再导入
-- 模型请求由浏览器直接发出，若接口未开放 CORS 会失败，需改用支持跨域的接口或经本地代理访问
+- 模型请求默认经本地签名服务 `/api/llm` 转发，因此**不要求接口支持跨域**；若本地服务未启动则回退浏览器直连（此时需接口自行放行跨域）
 
 **规划**
 - 月报生成、周报一键导出为 Word / PDF
-- 模型请求改由 `cos-server` 代理（密钥同样走 `.env`），彻底规避跨域与前端持钥
+- 模型密钥由本地服务统一托管（当前仍由网页填写并保存在本机 localStorage）

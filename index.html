@@ -1666,17 +1666,45 @@ async function callLlm(messages, temperature, maxTokens) {
   if (!baseUrl) throw new Error("请先在左侧「模型配置」中填写接口地址");
   if (!apiKey) throw new Error("请先填写 API Key");
   if (!model) throw new Error("请先填写模型名称");
+
+  /* 首选：经本地签名服务转发。浏览器从 file:// 页面直连第三方接口时，
+     受同源策略限制（Origin 为 null），多数接口不会放行，会直接失败。 */
+  try {
+    const pr = await fetch(SIGN_SERVER + "/api/llm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ baseUrl: baseUrl, apiKey: apiKey, model: model, messages: messages, temperature: temperature, maxTokens: maxTokens })
+    });
+    let pj = null;
+    try { pj = await pr.json(); } catch (_) {}
+    if (pr.ok && pj && pj.ok) return String(pj.content).trim();
+    if (pj && pj.error) throw new Error(pj.error);
+    throw new Error("本地服务返回 HTTP " + pr.status);
+  } catch (e) {
+    /* 仅在「本地服务本身连不上」时回退浏览器直连；
+       若本地服务已正常转发并返回业务错误，则直接抛出，避免掩盖真实原因 */
+    const connFail = (e instanceof TypeError) || /load failed|failed to fetch|networkerror|fetch is not defined/i.test(e.message || "");
+    if (!connFail) throw e;
+    console.warn("本地转发服务不可用，改用浏览器直连：", e.message);
+  }
+
+  /* 回退：浏览器直连（接口需自行放行跨域） */
   const payload = {
     model: model,
     messages: messages,
     temperature: temperature == null ? 0.3 : temperature
   };
   if (maxTokens) payload.max_tokens = maxTokens;
-  const res = await fetch(baseUrl + "/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
-    body: JSON.stringify(payload)
-  });
+  let res;
+  try {
+    res = await fetch(baseUrl + "/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
+      body: JSON.stringify(payload)
+    });
+  } catch (e) {
+    throw new Error("浏览器直连失败（" + (e.message || "网络错误") + "）。多为接口未放行跨域，请确认本地签名服务已启动（双击「启动工作台.command」）");
+  }
   if (!res.ok) {
     let msg = "HTTP " + res.status;
     try { const j = await res.json(); if (j.error && j.error.message) msg += ": " + j.error.message; } catch (_) {}

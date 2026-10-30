@@ -317,6 +317,84 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  /* ============ 模型请求代理 ============
+   * 浏览器从 file:// 页面直连第三方模型接口会被跨域策略拦截（Origin: null），
+   * 由本机服务代为转发，彻底规避该限制。密钥仅在本机 127.0.0.1 内传递。 */
+  if (req.method === 'POST' && pathname === '/api/llm') {
+    readJsonBody(req, res, 256 * 1024, async (obj) => {
+      const baseUrl = String(obj.baseUrl || '').trim().replace(/\/+$/, '');
+      const apiKey = String(obj.apiKey || '').trim();
+      const model = String(obj.model || '').trim();
+      const messages = obj.messages;
+      if (!/^https?:\/\/[^\s]+$/i.test(baseUrl)) {
+        res.writeHead(400, corsHeaders(req));
+        res.end(JSON.stringify({ ok: false, error: '接口地址格式不正确（需以 http:// 或 https:// 开头）' }));
+        return;
+      }
+      if (!apiKey) {
+        res.writeHead(400, corsHeaders(req));
+        res.end(JSON.stringify({ ok: false, error: '缺少 API Key' }));
+        return;
+      }
+      if (!model) {
+        res.writeHead(400, corsHeaders(req));
+        res.end(JSON.stringify({ ok: false, error: '缺少模型名称' }));
+        return;
+      }
+      if (!Array.isArray(messages) || messages.length === 0) {
+        res.writeHead(400, corsHeaders(req));
+        res.end(JSON.stringify({ ok: false, error: 'messages 不能为空' }));
+        return;
+      }
+      const payload = {
+        model: model,
+        messages: messages,
+        temperature: obj.temperature == null ? 0.3 : Number(obj.temperature)
+      };
+      if (obj.maxTokens) payload.max_tokens = Number(obj.maxTokens);
+
+      /* 60 秒超时：周报生成属长请求，但需避免无限挂起 */
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 60000);
+      try {
+        const up = await fetch(baseUrl + '/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+          body: JSON.stringify(payload),
+          signal: ac.signal
+        });
+        const text = await up.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch (e) { /* 非 JSON 响应 */ }
+        const content = data && data.choices && data.choices[0] && data.choices[0].message
+          ? data.choices[0].message.content : null;
+        if (!up.ok) {
+          const detail = (data && data.error && (data.error.message || data.error.code)) || text.slice(0, 200);
+          res.writeHead(502, corsHeaders(req));
+          res.end(JSON.stringify({ ok: false, error: 'HTTP ' + up.status + (detail ? ': ' + detail : '') }));
+          return;
+        }
+        if (!content) {
+          res.writeHead(502, corsHeaders(req));
+          res.end(JSON.stringify({ ok: false, error: '模型返回内容为空，响应片段：' + text.slice(0, 200) }));
+          return;
+        }
+        res.writeHead(200, corsHeaders(req));
+        res.end(JSON.stringify({ ok: true, content: String(content) }));
+      } catch (e) {
+        const timeout = e && (e.name === 'AbortError' || /abort/i.test(e.message || ''));
+        const msg = timeout
+          ? '请求超时（60 秒未返回）'
+          : ('无法连接模型接口：' + (e.cause && e.cause.message ? e.cause.message : (e.message || String(e))));
+        res.writeHead(timeout ? 504 : 502, corsHeaders(req));
+        res.end(JSON.stringify({ ok: false, error: msg }));
+      } finally {
+        clearTimeout(timer);
+      }
+    });
+    return;
+  }
+
   if ((req.method === 'GET' || req.method === 'POST') && pathname === '/api/sign-upload') {
     const filename = parsed.query.filename || '';
     if (!filename) {
