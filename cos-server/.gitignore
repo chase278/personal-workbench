@@ -1,3 +1,9 @@
+# 密钥与本地配置：绝不提交
+.env
+.env.local
+server.log
+.cos-config.json
+
+# 依赖与系统文件
 node_modules/
 .DS_Store
-.env

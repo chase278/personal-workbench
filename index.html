@@ -424,8 +424,30 @@
           <label>签名服务地址</label>
           <input type="text" id="cloudServerUrl" placeholder="http://localhost:3456" onchange="saveCloudConfig()">
         </div>
+        <div class="cfg-field">
+          <label>SecretId</label>
+          <input type="text" id="cosSecretId" placeholder="AKID..." autocomplete="off">
+        </div>
+        <div class="cfg-field">
+          <label>SecretKey</label>
+          <div class="cfg-pwd-wrap">
+            <input type="password" id="cosSecretKey" placeholder="SecretKey" autocomplete="new-password">
+            <button class="cfg-pwd-toggle" id="cosKeyToggle" type="button" onclick="toggleCosSecret()" title="显示 / 隐藏">👁</button>
+          </div>
+        </div>
+        <div class="cfg-field">
+          <label>Bucket</label>
+          <input type="text" id="cosBucket" placeholder="bucket-1250000000" autocomplete="off">
+        </div>
+        <div class="cfg-field">
+          <label>Region</label>
+          <input type="text" id="cosRegion" placeholder="ap-guangzhou" autocomplete="off">
+        </div>
         <div class="cfg-actions">
-          <button class="cfg-btn primary" type="button" onclick="saveCloudConfig()">保存地址</button>
+          <button class="cfg-btn primary" type="button" onclick="saveCosConfig()">保存并连接</button>
+          <button class="cfg-btn" type="button" onclick="testCosConfig()">测试连接</button>
+        </div>
+        <div class="cfg-actions">
           <button class="cfg-btn" type="button" onclick="syncCloudNow()">立即同步</button>
         </div>
         <div class="cfg-hint" id="cloudStatusHint">未同步</div>
@@ -1335,6 +1357,8 @@ function toggleApiKey() {
   }
 }
 
+let lastCosStatus = { checked: false, configured: false, bucket: "", region: "", secretIdMasked: "", source: "" };
+
 function loadCloudConfig() {
   try {
     const raw = localStorage.getItem(CLOUD_CFG_KEY);
@@ -1344,12 +1368,81 @@ function loadCloudConfig() {
 function fillCloudConfig() {
   const cfg = loadCloudConfig();
   document.getElementById("cloudServerUrl").value = cfg.serverUrl || SIGN_SERVER || "http://localhost:3456";
+  if (!document.getElementById("cosRegion").value) document.getElementById("cosRegion").value = "ap-guangzhou";
 }
 function saveCloudConfig() {
   const url = document.getElementById("cloudServerUrl").value.trim() || "http://localhost:3456";
   localStorage.setItem(CLOUD_CFG_KEY, JSON.stringify({ serverUrl: url }));
   SIGN_SERVER = url;
-  toast("云同步地址已保存");
+  toast("签名服务地址已保存");
+  refreshCloudStatus();
+}
+function toggleCosSecret() {
+  const el = document.getElementById("cosSecretKey");
+  const btn = document.getElementById("cosKeyToggle");
+  if (el.type === "password") { el.type = "text"; btn.textContent = "🙈"; btn.title = "隐藏"; }
+  else { el.type = "password"; btn.textContent = "👁"; btn.title = "显示"; }
+}
+async function saveCosConfig() {
+  const serverUrl = document.getElementById("cloudServerUrl").value.trim() || "http://localhost:3456";
+  SIGN_SERVER = serverUrl;
+  localStorage.setItem(CLOUD_CFG_KEY, JSON.stringify({ serverUrl: serverUrl }));
+  const payload = {
+    secretId: document.getElementById("cosSecretId").value.trim(),
+    secretKey: document.getElementById("cosSecretKey").value.trim(),
+    bucket: document.getElementById("cosBucket").value.trim(),
+    region: document.getElementById("cosRegion").value.trim() || "ap-guangzhou"
+  };
+  if (!payload.secretId || !payload.secretKey || !payload.bucket) {
+    toast("请先填写 SecretId、SecretKey 和 Bucket");
+    return;
+  }
+  try {
+    const r = await fetch(SIGN_SERVER + "/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const j = await r.json();
+    if (!r.ok || !j.ok) throw new Error(j.error || ("HTTP " + r.status));
+    document.getElementById("cosSecretId").value = "";
+    document.getElementById("cosSecretKey").value = "";
+    toast(j.persisted ? "COS 配置已保存到本机并生效" : "COS 配置已生效（写入文件失败，重启后需重新填写）");
+    await refreshCloudStatus();
+  } catch (e) {
+    toast("保存失败：" + (e.message || e) + "（请确认签名服务已启动）");
+  }
+}
+async function testCosConfig() {
+  try {
+    const r = await fetch(SIGN_SERVER + "/api/config/test");
+    const j = await r.json();
+    if (!r.ok || !j.ok) throw new Error(j.error || ("HTTP " + r.status));
+    toast("连接成功 ✓ 桶：" + j.bucket + (j.note ? "（" + j.note + "）" : ""));
+  } catch (e) {
+    toast("连接失败：" + (e.message || e));
+  }
+}
+async function refreshCloudStatus() {
+  try {
+    const r = await fetch(SIGN_SERVER + "/api/config");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    lastCosStatus = {
+      checked: true,
+      configured: !!j.configured,
+      bucket: j.bucket || "",
+      region: j.region || "",
+      secretIdMasked: j.secretIdMasked || "",
+      source: j.source || ""
+    };
+    if (j.configured) {
+      if (!document.getElementById("cosBucket").value) document.getElementById("cosBucket").value = j.bucket || "";
+      if (!document.getElementById("cosRegion").value) document.getElementById("cosRegion").value = j.region || "ap-guangzhou";
+    }
+  } catch (e) {
+    lastCosStatus = { checked: true, configured: false, bucket: "", region: "", secretIdMasked: "", source: "offline" };
+  }
   updateCloudStatus();
 }
 function updateCloudStatus() {
@@ -1358,14 +1451,28 @@ function updateCloudStatus() {
   const lastPush = localStorage.getItem("workbench_lastpush");
   const files = state.boards.reduce((n, b) => n + b.files.length, 0);
   const bytes = new Blob([JSON.stringify(state)]).size;
+  let cosLine;
+  if (!lastCosStatus.checked) {
+    cosLine = "COS：检测中…";
+  } else if (lastCosStatus.source === "offline") {
+    cosLine = "COS：签名服务未连接";
+  } else if (!lastCosStatus.configured) {
+    cosLine = "COS：未配置（请填写上方密钥）";
+  } else {
+    const src = lastCosStatus.source === "file" ? "网页保存" : (lastCosStatus.source === "env" ? "环境变量" : "");
+    cosLine = "COS：已配置 · " + lastCosStatus.bucket + " · " + lastCosStatus.region +
+      (lastCosStatus.secretIdMasked ? " · " + lastCosStatus.secretIdMasked : "") +
+      (src ? "（" + src + "）" : "");
+  }
   hint.textContent = "服务：" + SIGN_SERVER +
+    "\n" + cosLine +
     "\n上次同步：" + (lastPush ? formatCompletedAt(Number(lastPush)) : "从未") +
-    "\n云端状态：" + files + " 个文件 · " + formatSize(bytes);
+    "\n本地状态：" + files + " 个文件 · " + formatSize(bytes);
 }
 async function syncCloudNow() {
   toast("正在从云端同步...");
   await syncFromCloud();
-  updateCloudStatus();
+  await refreshCloudStatus();
 }
 
 /* 本周起止时间（周一 00:00 - 周日 23:59:59） */
@@ -1515,8 +1622,9 @@ function init() {
   // 跨期自动归档：打开页面时若已完成项属于上一周/上一月，自动分割归档
   if (autoArchive()) saveState();
   render();
-  // 启动时从云端拉取状态（若云端更新则覆盖）——分钟内手工可用
-  syncFromCloud().then(updateCloudStatus);
+  // 检测签名服务与 COS 配置状态，并从云端拉取最新状态
+  refreshCloudStatus();
+  syncFromCloud().then(refreshCloudStatus);
 }
 document.addEventListener("DOMContentLoaded", init);
 </script>
