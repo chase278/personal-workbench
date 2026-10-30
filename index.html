@@ -352,6 +352,31 @@
   }
   .report-loading { text-align: center; padding: 34px 0; color: var(--text-3); font-size: 13px; }
   .report-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+
+  /* ===== 周报中心（日期下方独立模块） ===== */
+  .report-center { padding: 16px 18px; margin-bottom: 20px; }
+  .rc-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .rc-title { font-size: 15px; font-weight: 600; }
+  .rc-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .rc-check { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-2); cursor: pointer; user-select: none; }
+  .rc-check input { cursor: pointer; }
+  .report-btn.ghost { background: #fff; color: var(--primary); border-color: #c9d8f5; }
+  .report-btn.ghost:hover { background: var(--primary-soft); }
+  .report-btn:disabled { opacity: .6; cursor: not-allowed; }
+  .rc-hint { margin-top: 10px; font-size: 12px; color: var(--text-3); white-space: pre-line; line-height: 1.7; }
+  .rc-hint .ok { color: var(--success); }
+
+  /* ===== 周报数据库列表 ===== */
+  .report-list { max-height: 52vh; overflow-y: auto; }
+  .report-item { display: flex; gap: 12px; padding: 12px 2px; border-bottom: 1px solid var(--border); }
+  .report-item:last-child { border-bottom: none; }
+  .ri-main { flex: 1; min-width: 0; }
+  .ri-title { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
+  .ri-meta { font-size: 11px; color: var(--text-3); margin-bottom: 4px; }
+  .ri-preview { font-size: 12px; color: var(--text-2); line-height: 1.6; word-break: break-all; }
+  .ri-ops { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+  .ri-ops .cfg-btn { flex: none; padding: 5px 10px; }
+  .cfg-btn.danger { color: var(--danger); border-color: #f3d0ce; }
 </style>
 </head>
 <body>
@@ -462,17 +487,32 @@
       <div class="date" id="todayText"></div>
     </div>
 
+    <!-- ===== 周报中心（日期下方独立模块） ===== -->
+    <div class="card report-center">
+      <div class="rc-head">
+        <div class="rc-title">周报中心</div>
+        <div class="rc-actions">
+          <label class="rc-check" title="生成时参考已学习的历史周报风格">
+            <input type="checkbox" id="useStyleRef" checked> 使用历史风格
+          </label>
+          <button class="report-btn" onclick="openReportModal()">📝 一键生成周报</button>
+          <button class="report-btn ghost" id="learnStyleBtn" onclick="learnReportStyle()">🧠 同步学习风格</button>
+          <label class="report-btn ghost" for="importReportFile">📥 导入 Word/Excel</label>
+          <input type="file" id="importReportFile" class="hidden-file-input" accept=".docx,.xlsx,.txt,.md" multiple>
+          <button class="report-btn ghost" onclick="openReportDb()">🗂 周报数据库 <b id="reportCount">0</b></button>
+        </div>
+      </div>
+      <div class="rc-hint" id="rcHint">本周已完成 0 项 · 数据库 0 篇</div>
+    </div>
+
     <!-- 备忘录 / 周计划 / 月计划 三卡片 -->
     <div class="main-grid">
       <!-- 备忘录 -->
       <div class="card">
-        <div class="card-tabs-row">
-          <div class="card-tabs">
-            <button class="card-tab-btn active" data-card="memo">备忘录</button>
-            <button class="card-tab-btn" data-card="week">本周计划</button>
-            <button class="card-tab-btn" data-card="month">本月计划</button>
-          </div>
-          <button class="report-btn" id="reportBtn" onclick="openReportModal()" title="根据本周已完成任务生成周报">📝 一键生成周报</button>
+        <div class="card-tabs">
+          <button class="card-tab-btn active" data-card="memo">备忘录</button>
+          <button class="card-tab-btn" data-card="week">本周计划</button>
+          <button class="card-tab-btn" data-card="month">本月计划</button>
         </div>
         <div class="card-body">
           <!-- 备忘录 -->
@@ -564,7 +604,20 @@
       <div class="report-actions">
         <button class="btn" onclick="closeModal('reportModal')">关闭</button>
         <button class="btn" onclick="openReportModal()">重新生成</button>
+        <button class="btn" onclick="saveCurrentReport()">存入数据库</button>
         <button class="btn btn-primary" onclick="copyReport()">复制周报</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 周报数据库模态框 ===== -->
+  <div class="modal-mask" id="reportDbModal" onclick="if(event.target===this)closeModal('reportDbModal')">
+    <div class="modal report-modal">
+      <h3>周报数据库</h3>
+      <div id="reportDbList" class="report-list"></div>
+      <div class="report-actions">
+        <label class="btn" for="importReportFile">导入文件</label>
+        <button class="btn" onclick="closeModal('reportDbModal')">关闭</button>
       </div>
     </div>
   </div>
@@ -585,9 +638,13 @@ const DEFAULT_STATE = {
     { id: "b1", name: "板块一", files: [] },
     { id: "b2", name: "板块二", files: [] },
     { id: "b3", name: "板块三", files: [] }
-  ]
+  ],
+  reports: [],          // 周报数据库：生成的 + 导入的
+  reportStyle: { profile: "", updatedAt: 0, sampleCount: 0 }  // 已学习到的周报风格
 };
 const STORE_KEY = "workbench_state_v1";
+const MAX_REPORTS = 40;          // 周报数据库最多保留多少篇
+const MAX_REPORT_CHARS = 8000;   // 单篇周报保存的最大字数（防止 state.json 过大）
 
 let state = loadState();
 let renameTarget = null;   // 当前正在重命名的板块 id
@@ -641,6 +698,28 @@ function mergeState(base, over) {
     if (out.boards.length === 0) {
       out.boards = base.boards.map(b => ({ id: b.id, name: b.name, files: [] }));
     }
+  }
+  // 周报数据库
+  if (Array.isArray(over.reports)) {
+    out.reports = over.reports
+      .filter(r => r && r.content)
+      .slice(0, MAX_REPORTS)
+      .map(r => ({
+        id: r.id || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+        title: r.title || "未命名周报",
+        content: String(r.content).slice(0, MAX_REPORT_CHARS),
+        createdAt: Number(r.createdAt) || Date.now(),
+        source: r.source === "imported" ? "imported" : "generated",
+        fileName: r.fileName || ""
+      }));
+  }
+  // 已学习的周报风格
+  if (over.reportStyle && typeof over.reportStyle === "object") {
+    out.reportStyle = {
+      profile: String(over.reportStyle.profile || "").slice(0, 4000),
+      updatedAt: Number(over.reportStyle.updatedAt) || 0,
+      sampleCount: Number(over.reportStyle.sampleCount) || 0
+    };
   }
   return out;
 }
@@ -1502,16 +1581,192 @@ function getThisWeekDoneTasks() {
   return result;
 }
 
+let currentReportText = "";
+
+/* ===== 通用大模型调用 ===== */
+async function callLlm(messages, temperature) {
+  const cfg = loadLlmConfig();
+  const baseUrl = (cfg.baseUrl || "").replace(/\/+$/, "");
+  const apiKey = cfg.apiKey || "";
+  const model = cfg.model || "";
+  if (!baseUrl) throw new Error("请先在左侧「大模型配置」中填写接口地址");
+  if (!apiKey) throw new Error("请先填写 API Key");
+  if (!model) throw new Error("请先填写模型名称");
+  const res = await fetch(baseUrl + "/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
+    body: JSON.stringify({ model: model, messages: messages, temperature: temperature == null ? 0.3 : temperature })
+  });
+  if (!res.ok) {
+    let msg = "HTTP " + res.status;
+    try { const j = await res.json(); if (j.error && j.error.message) msg += ": " + j.error.message; } catch (_) {}
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+  if (!content) throw new Error("大模型返回内容为空");
+  return content.trim();
+}
+
+/* ===== 周报数据库 ===== */
+function getReports() {
+  if (!Array.isArray(state.reports)) state.reports = [];
+  return state.reports;
+}
+function saveReport(payload) {
+  const text = String(payload.content || "").trim();
+  if (!text) { toast("内容为空，未保存"); return null; }
+  const clipped = text.slice(0, MAX_REPORT_CHARS);
+  const list = getReports();
+  const dup = list.find(r => r.content === clipped);
+  if (dup) { toast("数据库中已有相同内容的周报"); return dup; }
+  const item = {
+    id: uid(),
+    title: payload.title || ("周报 · " + formatCompletedAt(Date.now())),
+    content: clipped,
+    createdAt: Date.now(),
+    source: payload.source === "imported" ? "imported" : "generated",
+    fileName: payload.fileName || ""
+  };
+  list.unshift(item);
+  if (list.length > MAX_REPORTS) state.reports = list.slice(0, MAX_REPORTS);
+  saveState();
+  renderReportCenter();
+  const db = document.getElementById("reportDbModal");
+  if (db && db.classList.contains("show")) renderReportDbList();
+  return item;
+}
+function getWeekOfYear(date) {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const dayNum = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - dayNum + 3);
+  const firstThursday = new Date(d.getFullYear(), 0, 4);
+  const fDayNum = (firstThursday.getDay() + 6) % 7;
+  firstThursday.setDate(firstThursday.getDate() - fDayNum + 3);
+  return 1 + Math.round((d - firstThursday) / (7 * 24 * 3600 * 1000));
+}
+function saveCurrentReport() {
+  if (!currentReportText) { toast("暂无可保存的内容"); return; }
+  const { startDate } = getWeekRange();
+  const title = "周报 · " + startDate.getFullYear() + " 年第 " + getWeekOfYear(startDate) + " 周";
+  const item = saveReport({ title: title, content: currentReportText, source: "generated" });
+  if (item) toast("已存入周报数据库");
+}
+function deleteReport(id) {
+  state.reports = getReports().filter(r => r.id !== id);
+  saveState();
+  renderReportCenter();
+  renderReportDbList();
+  toast("已删除");
+}
+function viewReport(id) {
+  const r = getReports().find(x => x.id === id);
+  if (!r) return;
+  closeModal("reportDbModal");
+  currentReportText = r.content;
+  const body = document.getElementById("reportBody");
+  body.innerHTML = '<div class="report-content" id="reportContent"></div>';
+  document.getElementById("reportContent").textContent = r.content;
+  openModal("reportModal");
+}
+function openReportDb() {
+  renderReportDbList();
+  openModal("reportDbModal");
+}
+function renderReportDbList() {
+  const box = document.getElementById("reportDbList");
+  if (!box) return;
+  const list = getReports();
+  if (!list.length) {
+    box.innerHTML = '<div class="report-loading">数据库还是空的。可以「一键生成周报」后点「存入数据库」，或直接导入 Word / Excel 文件。</div>';
+    return;
+  }
+  box.innerHTML = list.map(r => {
+    const meta = formatCompletedAt(r.createdAt) + " · " + (r.source === "imported" ? "导入" : "生成") +
+      (r.fileName ? " · " + escapeHtml(r.fileName) : "") + " · " + r.content.length + " 字";
+    const preview = escapeHtml(r.content.slice(0, 120)) + (r.content.length > 120 ? "…" : "");
+    return '<div class="report-item">' +
+      '<div class="ri-main">' +
+      '<div class="ri-title">' + escapeHtml(r.title) + '</div>' +
+      '<div class="ri-meta">' + meta + '</div>' +
+      '<div class="ri-preview">' + preview + '</div>' +
+      '</div>' +
+      '<div class="ri-ops">' +
+      '<button class="cfg-btn" onclick="viewReport(\'' + r.id + '\')">查看</button>' +
+      '<button class="cfg-btn danger" onclick="deleteReport(\'' + r.id + '\')">删除</button>' +
+      '</div>' +
+      '</div>';
+  }).join("");
+}
+function renderReportCenter() {
+  const countEl = document.getElementById("reportCount");
+  if (countEl) countEl.textContent = String(getReports().length);
+  const hint = document.getElementById("rcHint");
+  if (!hint) return;
+  const weekDone = getThisWeekDoneTasks().length;
+  const total = getReports().length;
+  const style = state.reportStyle || {};
+  const styleLine = style.profile
+    ? '<span class="ok">风格已学习</span>（基于 ' + style.sampleCount + ' 篇 · ' + formatCompletedAt(style.updatedAt) + '）'
+    : '风格未学习（点「同步学习风格」）';
+  hint.innerHTML = "本周已完成 " + weekDone + " 项 · 数据库 " + total + " 篇\n" + styleLine;
+}
+
+/* ===== 一键学习历史周报风格 ===== */
+async function learnReportStyle() {
+  const list = getReports();
+  if (!list.length) { toast("数据库为空，先导入或保存几篇周报"); return; }
+  const btn = document.getElementById("learnStyleBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "🧠 学习中..."; }
+  try {
+    const samples = list.slice(0, 5).map((r, i) =>
+      "【样例 " + (i + 1) + "】\n" + String(r.content).slice(0, 1500)
+    ).join("\n\n");
+    const out = await callLlm([
+      { role: "system", content: "你是一名写作风格分析助手，擅长从样例中归纳出可复用的写作规范。" },
+      { role: "user", content:
+        "下面是若干篇历史工作周报。请归纳它们的写作风格，输出一份简洁的「风格指南」，供以后生成周报时套用。\n\n" +
+        "请覆盖：\n1. 整体结构（分几条、是否按项目归类、有无开头结尾）\n2. 每条的行文格式与句式\n3. 语气与用词偏好（正式/简洁/成果导向等）\n4. 常用表达或专业术语\n5. 需要避免的写法\n\n" +
+        "控制在 300 字以内，直接输出指南正文，不要输出多余解释。\n\n" + samples
+      }
+    ], 0.2);
+    state.reportStyle = { profile: out.slice(0, 4000), updatedAt: Date.now(), sampleCount: Math.min(list.length, 5) };
+    saveState();
+    renderReportCenter();
+    toast("已学习 " + Math.min(list.length, 5) + " 篇周报的风格");
+  } catch (e) {
+    toast("学习失败：" + (e.message || e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "🧠 同步学习风格"; }
+  }
+}
+
+/* ===== 生成周报 ===== */
+function buildStyleRefBlock() {
+  const useRef = document.getElementById("useStyleRef");
+  if (useRef && !useRef.checked) return "";
+  const style = state.reportStyle || {};
+  if (style.profile) {
+    return "\n\n【历史周报风格指南】请严格沿用以下风格（结构、句式、语气），但不要照抄其中的具体内容：\n" + style.profile;
+  }
+  const list = getReports();
+  if (!list.length) return "";
+  const samples = list.slice(0, 2).map((r, i) => "【样例 " + (i + 1) + "】\n" + String(r.content).slice(0, 800)).join("\n\n");
+  return "\n\n【历史周报样例】请学习以下样例的结构、句式与语气，不要照抄具体内容：\n" + samples;
+}
+
 function openReportModal() {
   const tasks = getThisWeekDoneTasks();
   const body = document.getElementById("reportBody");
   openModal("reportModal");
+  currentReportText = "";
   if (!tasks.length) {
     body.innerHTML = '<div class="report-loading">本周暂无已完成的任务，请先勾选完成一些任务再生成周报。</div>';
     return;
   }
   body.innerHTML = '<div class="report-loading">正在调用大模型生成周报...</div>';
   generateWeeklyReport(tasks).then(text => {
+    currentReportText = text;
     body.innerHTML = '<div class="report-content" id="reportContent"></div>';
     document.getElementById("reportContent").textContent = text;
   }).catch(err => {
@@ -1520,14 +1775,6 @@ function openReportModal() {
 }
 
 async function generateWeeklyReport(tasks) {
-  const cfg = loadLlmConfig();
-  const baseUrl = (cfg.baseUrl || "").replace(/\/+$/, "");
-  const apiKey = cfg.apiKey || "";
-  const model = cfg.model || "";
-  if (!baseUrl) throw new Error("请先在左侧「大模型配置」中填写接口地址");
-  if (!apiKey) throw new Error("请先填写 API Key");
-  if (!model) throw new Error("请先填写模型名称");
-
   const { startDate, endDate } = getWeekRange();
   const fmt = d => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   const profileName = (state.profile && state.profile.name) || "我";
@@ -1541,33 +1788,15 @@ async function generateWeeklyReport(tasks) {
     "2. 每条严格使用格式：序号. 项目名称/姓名：项目内容，我做的工作\n" +
     "3. 语言简洁专业，突出工作成果和价值，不要编造未提供的内容。\n" +
     "4. 只输出周报正文，不要输出多余的解释、标题或 Markdown 代码块。\n\n" +
-    "本周已完成任务：\n" + taskLines;
+    "本周已完成任务：\n" + taskLines +
+    buildStyleRefBlock();
 
-  const res = await fetch(baseUrl + "/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": "Bearer " + apiKey
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ],
-      temperature: 0.3
-    })
-  });
-  if (!res.ok) {
-    let msg = "HTTP " + res.status;
-    try { const j = await res.json(); if (j.error && j.error.message) msg += ": " + j.error.message; } catch (_) {}
-    throw new Error(msg);
-  }
-  const data = await res.json();
-  const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-  if (!content) throw new Error("大模型返回内容为空");
-  return content.trim();
+  return await callLlm([
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt }
+  ], 0.3);
 }
+
 function copyReport() {
   const el = document.getElementById("reportContent");
   if (!el) { toast("暂无可复制的内容"); return; }
@@ -1578,6 +1807,159 @@ function copyReport() {
     toast("当前环境不支持自动复制，请手动选择");
   }
 }
+
+/* ===== 导入 Word / Excel ===== */
+function decodeXmlEntities(s) {
+  return String(s)
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&amp;/g, "&");
+}
+function findEocd(view, len) {
+  const min = Math.max(0, len - 22 - 65535);
+  for (let i = len - 22; i >= min; i--) {
+    if (view.getUint32(i, true) === 0x06054b50) return i;
+  }
+  return -1;
+}
+function readZipEntries(buf) {
+  const view = new DataView(buf);
+  const eocd = findEocd(view, buf.byteLength);
+  if (eocd < 0) throw new Error("不是有效的 Office 文件（ZIP 结构缺失）");
+  const count = view.getUint16(eocd + 10, true);
+  const cdOffset = view.getUint32(eocd + 16, true);
+  const entries = [];
+  let p = cdOffset;
+  for (let i = 0; i < count; i++) {
+    if (p + 46 > buf.byteLength || view.getUint32(p, true) !== 0x02014b50) break;
+    const method = view.getUint16(p + 10, true);
+    const compSize = view.getUint32(p + 20, true);
+    const nameLen = view.getUint16(p + 28, true);
+    const extraLen = view.getUint16(p + 30, true);
+    const commentLen = view.getUint16(p + 32, true);
+    const localOffset = view.getUint32(p + 42, true);
+    const name = new TextDecoder("utf-8").decode(new Uint8Array(buf, p + 46, nameLen));
+    entries.push({ name: name, method: method, compSize: compSize, localOffset: localOffset });
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  return entries;
+}
+async function inflateRawBytes(bytes) {
+  if (typeof DecompressionStream === "undefined") {
+    throw new Error("当前浏览器不支持解压 Office 文件，请使用新版 Chrome / Edge / Safari");
+  }
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+async function readZipEntry(buf, entry) {
+  const view = new DataView(buf);
+  const p = entry.localOffset;
+  if (view.getUint32(p, true) !== 0x04034b50) throw new Error("ZIP 局部头损坏");
+  const nameLen = view.getUint16(p + 26, true);
+  const extraLen = view.getUint16(p + 28, true);
+  const start = p + 30 + nameLen + extraLen;
+  const data = new Uint8Array(buf, start, entry.compSize);
+  if (entry.method === 0) return data;
+  if (entry.method === 8) return await inflateRawBytes(data);
+  throw new Error("不支持的压缩方式：" + entry.method);
+}
+async function parseDocx(buf) {
+  const entries = readZipEntries(buf);
+  const target = entries.find(function (e) { return e.name === "word/document.xml"; });
+  if (!target) throw new Error("未找到 word/document.xml，可能不是 .docx 文件");
+  const xml = new TextDecoder("utf-8").decode(await readZipEntry(buf, target));
+  const text = xml
+    .replace(/<w:tab[^>]*\/>/g, "\t")
+    .replace(/<w:br[^>]*\/>/g, "\n")
+    .replace(/<\/w:p>/g, "\n")
+    .replace(/<[^>]+>/g, "");
+  return decodeXmlEntities(text).replace(/[ \t]+\n/g, "\n").replace(/\n{2,}/g, "\n").trim();
+}
+async function parseXlsx(buf) {
+  const entries = readZipEntries(buf);
+  let shared = [];
+  const sst = entries.find(function (e) { return e.name === "xl/sharedStrings.xml"; });
+  if (sst) {
+    const xml = new TextDecoder("utf-8").decode(await readZipEntry(buf, sst));
+    shared = (xml.match(/<si>[\s\S]*?<\/si>/g) || []).map(function (si) {
+      return decodeXmlEntities(si.replace(/<[^>]+>/g, ""));
+    });
+  }
+  const sheets = entries
+    .filter(function (e) { return /^xl\/worksheets\/sheet\d+\.xml$/.test(e.name); })
+    .sort(function (a, b) { return a.name.localeCompare(b.name); });
+  if (!sheets.length) throw new Error("未找到工作表，可能不是 .xlsx 文件");
+  const blocks = [];
+  for (const sheet of sheets) {
+    const xml = new TextDecoder("utf-8").decode(await readZipEntry(buf, sheet));
+    const rows = xml.match(/<row[^>]*>[\s\S]*?<\/row>/g) || [];
+    const lines = [];
+    for (const row of rows) {
+      const cells = [];
+      const cellRe = /<c\b([^>]*)>([\s\S]*?)<\/c>/g;
+      let m;
+      while ((m = cellRe.exec(row))) {
+        const attrs = m[1];
+        const inner = m[2];
+        const tm = attrs.match(/\bt="([^"]+)"/);
+        const t = tm ? tm[1] : "";
+        let val = "";
+        if (t === "s") {
+          const v = inner.match(/<v>([\s\S]*?)<\/v>/);
+          if (v) val = shared[parseInt(v[1], 10)] || "";
+        } else if (t === "inlineStr") {
+          val = decodeXmlEntities(inner.replace(/<[^>]+>/g, ""));
+        } else {
+          const v = inner.match(/<v>([\s\S]*?)<\/v>/);
+          if (v) val = v[1];
+        }
+        cells.push(String(val).trim());
+      }
+      if (cells.some(function (c) { return c; })) lines.push(cells.join(" | "));
+    }
+    if (lines.length) blocks.push(lines.join("\n"));
+  }
+  return blocks.join("\n\n").trim();
+}
+async function parseReportFile(file) {
+  const name = (file.name || "").toLowerCase();
+  if (name.endsWith(".docx")) return await parseDocx(await file.arrayBuffer());
+  if (name.endsWith(".xlsx")) return await parseXlsx(await file.arrayBuffer());
+  if (name.endsWith(".txt") || name.endsWith(".md")) return await file.text();
+  if (name.endsWith(".doc")) throw new Error("暂不支持旧版 .doc，请另存为 .docx 后再导入");
+  if (name.endsWith(".xls")) throw new Error("暂不支持旧版 .xls，请另存为 .xlsx 后再导入");
+  throw new Error("不支持的文件格式：" + file.name);
+}
+async function importReportFiles(files) {
+  const list = Array.from(files || []);
+  if (!list.length) return;
+  let ok = 0;
+  const errors = [];
+  for (const f of list) {
+    try {
+      const text = await parseReportFile(f);
+      if (!text || text.length < 5) throw new Error("解析结果为空");
+      saveReport({
+        title: f.name.replace(/\.(docx|xlsx|txt|md)$/i, ""),
+        content: text,
+        source: "imported",
+        fileName: f.name
+      });
+      ok++;
+    } catch (e) {
+      errors.push(f.name + "：" + (e.message || e));
+    }
+  }
+  if (ok) toast("已导入 " + ok + " 篇周报");
+  if (errors.length) toast("部分导入失败：" + errors.join("；"));
+  renderReportCenter();
+  const db = document.getElementById("reportDbModal");
+  if (db && db.classList.contains("show")) renderReportDbList();
+}
+document.getElementById("importReportFile").addEventListener("change", function (e) {
+  importReportFiles(e.target.files).then(function () { e.target.value = ""; });
+});
 
 /* ============ 整体渲染 ============ */
 function renderStats() {
@@ -1610,6 +1992,7 @@ function render() {
   renderTasks("month");
   renderBoards();
   renderStats();
+  renderReportCenter();
   updateCloudStatus();
 }
 
