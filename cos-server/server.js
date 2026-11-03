@@ -28,7 +28,9 @@ const HOST = envHost();
  * Authorization: Bearer <token> 头。仅本机 file:// 使用可不设；局域网部署强烈建议设置。 */
 const AUTH_TOKEN = process.env.AUTH_TOKEN || '';
 function envHost() {
-  const h = process.env.HOST || '127.0.0.1';
+  let h = process.env.HOST || '127.0.0.1';
+  // macOS 上 localhost 可能解析成 ::1，导致只监听 IPv6、IPv4 健康检查失败、被误判为"未启动"
+  if (h === 'localhost') h = '127.0.0.1';
   if (h === '0.0.0.0' && !process.env.AUTH_TOKEN) {
     console.warn('[安全警告] HOST=0.0.0.0 且未设置 AUTH_TOKEN：任何局域网设备都可操作你的 COS 桶，风险极高！');
   }

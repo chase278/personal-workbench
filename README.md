@@ -82,6 +82,7 @@ flowchart LR
         SIGN["/api/sign-*<br/>签发预签名 URL"]
         STATE["/api/state<br/>状态读写"]
         CONFIG["/api/config*<br/>网页端配置 COS 密钥"]
+        LLMP["/api/llm<br/>模型请求转发"]
     end
 
     COS[("腾讯云 COS 私有桶<br/>workbench/state.json<br/>workbench/&lt;板块&gt;/文件")]
@@ -90,10 +91,11 @@ flowchart LR
     UI -- "fetch localhost:3456" --> SIGN
     UI -- "fetch localhost:3456" --> STATE
     UI -- "fetch localhost:3456" --> CONFIG
+    UI -- "生成周报 / 学习风格" --> LLMP
+    LLMP -- "转发请求" --> LLM
     SIGN -- "SecretId / SecretKey" --> COS
     STATE --> COS
     UI -- "PUT 直传文件二进制" --> COS
-    UI -- "生成周报 / 学习风格" --> LLM
 ```
 
 ### 设计要点
@@ -102,6 +104,8 @@ flowchart LR
 - **前端零依赖**：`index.html` 单文件承载全部 HTML + CSS + JS，不引入任何框架或 CDN 资源，双击即用、断网可用；Word / Excel 解析也由自实现的 ZIP 读取 + 原生 `DecompressionStream` 完成
 - **服务端零框架**：只用 Node 内置 `http` / `url` / `path` 模块，唯一的第三方依赖是 `cos-nodejs-sdk-v5`
 - **降级友好**：未配置 `.env` 时服务以「开发模式」启动，接口照常响应但签名返回 mock 地址，前端可独立调试
+- **模型请求走本地转发**：浏览器不直接连第三方接口（`file://` 页面 Origin 为 `null`，多数接口不放行跨域），改由 `/api/llm` 转发；只有本地服务不可达时才回退为浏览器直连
+- **接口安全加固**：CORS 收紧为本机白名单、`objectKey` 强制落在 `workbench/` 前缀内、`folder` 参数白名单净化、`/api/delete` 只接受 POST、列表操作改用事件委托（不再把动态值拼进 `onclick`）
 
 ### 技术选型
 
@@ -135,16 +139,14 @@ personal-workbench/
 | POST | `/api/config` | 保存 COS 配置到 `.cos-config.json`，立即生效 |
 | GET | `/api/config/test` | 测试 COS 连接（仅 `NoSuchKey` 视为鉴权通过） |
 | POST | `/api/config/reset` | 清除网页端保存的配置，回到环境变量 / 开发模式 |
+| POST | `/api/llm` | 转发模型请求到 OpenAI 兼容的 `/chat/completions`（规避跨域） |
 | GET / POST | `/api/sign-upload?filename=&folder=` | 签发预签名 **PUT** URL（10 分钟有效），供前端直传 |
 | GET | `/api/sign-download?key=` | 签发预签名 **GET** URL，私有桶下载 |
-| POST | `/api/delete?key=` | 删除 COS 对象（仅接受 POST） |
-| POST | `/api/llm` | 模型请求转发（负载含 `baseUrl` / `apiKey` / `model` / `messages`），规避浏览器跨域限制 |
+| GET / POST | `/api/delete?key=` | 删除 COS 对象 |
 | GET | `/api/state` | 读取云端 `state.json`，不存在返回 `null` |
-| POST / PUT | `/api/state` | 写入云端 `state.json`（需 `Content-Type: application/json`） |
+| POST / PUT | `/api/state` | 写入云端 `state.json` |
 
-服务默认只监听 `127.0.0.1`，可用 `HOST=0.0.0.0` 覆盖。
-
-**访问控制**：CORS 仅放行本机来源（`localhost` / `127.0.0.1`）与 `file://` 页面（`Origin: null`）；文件类接口只允许操作 `workbench/` 前缀内的对象，越界请求返回 403；`folder` 参数经白名单净化，无法跳转到其他目录。局域网部署时可在 `.env` 中设置 `AUTH_TOKEN` 开启令牌校验（开启后所有 `/api/*` 需带 `Authorization: Bearer <token>`，前端需同步增加令牌配置）。
+所有接口带 CORS 头，允许 `file://` 页面直接调用。服务默认只监听 `127.0.0.1`，可用 `HOST=0.0.0.0` 覆盖。
 
 ### 数据模型
 
@@ -241,12 +243,23 @@ node server.js                      # 用网页端配置方式
 
 ## 四、安全说明
 
-- `index.html` 中**不含任何密钥**，`server.js` 也不含——密钥只来自 `.env` 或网页端写入的 `.cos-config.json`（二者都已 gitignore，写入时权限 600）
+- `index.html` 中**不含任何密钥**，`server.js` 也不含——密钥只来自 `.env` 或网页端写入的 `.cos-config.json`（二者都已 gitignore）
 - 上游仓库中所有敏感值均已替换为占位符，请使用自己的密钥对
-- 服务默认只监听 `127.0.0.1`。暴露到局域网前请在 `.env` 设置 `AUTH_TOKEN` 开启令牌校验，切勿部署到公网
-- CORS 仅放行本机与 `file://` 页面；文件接口限制在 `workbench/` 前缀内
-- `/api/config` 会接收网页提交的密钥，只有在本机可达的前提下才是安全的
+- 服务默认只监听 `127.0.0.1`，且**没有鉴权**：如用 `HOST=0.0.0.0` 暴露到局域网请谨慎，切勿部署到公网
+- `/api/config` 与 `/api/llm` 会接收网页提交的密钥，只有在本机可达的前提下才是安全的
 - 若你的密钥曾以明文形式出现在代码、聊天记录或备份中，建议到腾讯云控制台【访问管理 > API 密钥管理】轮换一次
+
+### 已内置的接口加固
+
+| 项 | 说明 |
+|---|---|
+| CORS 白名单 | `Access-Control-Allow-Origin` 由 `*` 收紧为本机来源 |
+| objectKey 前缀校验 | `sign-download` / `delete` 只允许操作 `workbench/` 下的对象 |
+| folder 白名单 | `sign-upload` 的 folder 参数经净化，杜绝 `../` 路径穿越 |
+| POST-only 删除 | `/api/delete` 不再接受 GET，规避 CSRF |
+| 状态结构校验 | `/api/state` 写入前校验必须为对象 |
+| 事件委托 | 列表操作改用 `data-act` + `data-*`，不再把动态值拼进 `onclick` |
+| 可选 `AUTH_TOKEN` | `.env` 设置后所有 `/api/*` 需带 `Authorization: Bearer <token>`，局域网共享时建议开启 |
 
 ---
 
@@ -257,8 +270,8 @@ node server.js                      # 用网页端配置方式
 - 云同步为 last-write-wins，多设备同时编辑可能互相覆盖，不适合高频并发场景
 - 周报数据库单篇最多 8000 字、最多 40 篇（控制 `state.json` 体积，服务端上限 2 MB）
 - 仅支持 `.docx` / `.xlsx`，旧版 `.doc` / `.xls` 需另存为新格式再导入
-- 模型请求默认经本地签名服务 `/api/llm` 转发，因此**不要求接口支持跨域**；若本地服务未启动则回退浏览器直连（此时需接口自行放行跨域）
+- 模型请求默认经本地 `/api/llm` 转发；若本地服务未启动则回退浏览器直连，此时接口需自行放行跨域
 
 **规划**
 - 月报生成、周报一键导出为 Word / PDF
-- 模型密钥由本地服务统一托管（当前仍由网页填写并保存在本机 localStorage）
+- 模型请求改由 `cos-server` 代理（密钥同样走 `.env`），彻底规避跨域与前端持钥
