@@ -735,6 +735,8 @@ function mergeState(base, over) {
       sampleCount: Number(over.reportStyle.sampleCount) || 0
     };
   }
+  // 保留云端版本时间，避免拉取后被清空，导致后续“谁最新”判断漂移
+  if (typeof over.updatedAt === "number") out.updatedAt = over.updatedAt;
   return out;
 }
 function saveState() {
@@ -1224,19 +1226,19 @@ async function pushStateToCloud() {
       body: JSON.stringify(state)
     });
     if (!r.ok) throw new Error("HTTP " + r.status);
-    localStorage.setItem("workbench_lastpush", String(state.updatedAt || Date.now()));
+    localStorage.setItem("workbench_lastpush", String(Date.now()));
   } catch (e) {
     console.warn("云端推送失败(稍后自动重试):", e.message);
   } finally { _syncing = false; }
 }
 
-/* 启动时从云端拉取 state，若云端比本地新则覆盖 */
+/* 启动 / 点「立即同步」：双向同步。云端比本地新则拉取；本地比云端新则推送，并刷新“上次同步”。 */
 async function syncFromCloud() {
   try {
     const r = await fetch(SIGN_SERVER + "/api/state");
     if (!r.ok) { console.warn("云端读取失败 HTTP", r.status); return; }
     const j = await r.json();
-    if (!j.state) { console.log("云端无状态，首次则上传本地"); pushStateToCloud(); return; }
+    if (!j.state) { console.log("云端无状态，首次则上传本地"); await pushStateToCloud(); return; }
     const cloudTs = j.state.updatedAt || 0;
     const localTs = (localStorage.getItem("workbench_last") ? Number(localStorage.getItem("workbench_last")) : 0) || (state.updatedAt || 0);
     // 仅当云端比本地新时覆盖（last-write-wins 简单策略）
@@ -1245,14 +1247,23 @@ async function syncFromCloud() {
       // 板块去重（保险）
       const seen = new Set();
       state.boards = state.boards.filter(b => (seen.has(b.id) ? false : (seen.add(b.id), true)));
+      // 拉取后同步更新版本时间与同步标记，避免下次误判“本地更新”
+      if (typeof state.updatedAt !== "number") state.updatedAt = cloudTs;
       localStorage.setItem(STORE_KEY, JSON.stringify(state));
+      localStorage.setItem("workbench_last", String(state.updatedAt));
+      localStorage.setItem("workbench_lastpush", String(Date.now()));
       // 云端数据可能含上周/上月任务：一并自动归档后写回
       if (autoArchive()) saveState();
       console.log("已从云端同步状态(云端更新)");
       render();
       toast("已同步云端最新数据");
+    } else if (localTs > cloudTs) {
+      // 本地较新：把本地推到云端，并刷新“上次同步”
+      await pushStateToCloud();
+      localStorage.setItem("workbench_lastpush", String(Date.now()));
+      toast("已同步到云端");
     } else {
-      console.log("本地较新(或一致),以本地为准");
+      localStorage.setItem("workbench_lastpush", String(Date.now()));
     }
   } catch (e) {
     console.warn("云同步读取失败(签名服务未启动?):", e.message);
@@ -2137,17 +2148,18 @@ function render() {
 }
 
 /* ============ 初始化 ============ */
-function init() {
+async function init() {
   document.getElementById("todayText").textContent = todayText();
   initTabs();
   fillLlmConfig();
   fillCloudConfig();
-  // 跨期自动归档：打开页面时若已完成项属于上一周/上一月，自动分割归档
+  render();
+  refreshCloudStatus();
+  // 先与云端双向同步，再基于合并后的数据归档，避免打开页面时用旧数据触发推送覆盖云端
+  await syncFromCloud();
   if (autoArchive()) saveState();
   render();
-  // 检测签名服务与 COS 配置状态，并从云端拉取最新状态
   refreshCloudStatus();
-  syncFromCloud().then(refreshCloudStatus);
 }
 document.addEventListener("DOMContentLoaded", init);
 </script>
